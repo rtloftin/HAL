@@ -1,14 +1,9 @@
 # Tests simple behavioral cloning in the roboschool environments
 
-from OpenGL import GLU
-import time
 import gym
 import tensorflow as tf
-import numpy as np
-from RoboschoolReacher_v0_2017may import SmallReactivePolicy as ReacherAgent
-from RoboschoolHopper_v0_2017may import SmallReactivePolicy as HopperAgent
-from RoboschoolAnt_v0_2017may import SmallReactivePolicy as AntAgent
-from RoboschoolInvertedPendulumSwingup_v0_2017may import SmallReactivePolicy as PendulumAgent
+
+from robots.RoboschoolInvertedPendulumSwingup_v0_2017may import SmallReactivePolicy as PendulumAgent
 
 # Reacher
 # env = gym.make("RoboschoolReacher-v1")
