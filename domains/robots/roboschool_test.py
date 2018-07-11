@@ -1,6 +1,6 @@
 import gym
 
-from robots.RoboschoolInvertedPendulumSwingup_v0_2017may import SmallReactivePolicy as PendulumAgent
+from domains.robots import SmallReactivePolicy as PendulumAgent
 
 # Reacher
 # env = gym.make("RoboschoolReacher-v1")

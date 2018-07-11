@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 
 def point(cx, cy, t1, t2, r, px, py):
@@ -81,5 +82,62 @@ def segment(cx, cy, t1, t2, r, p0x, p0y, p1x, p1y):
 
     return min(
         min(point(cx, cy, t1, t2, r, p0x, p0y), point(x, cy, t1, t2, r, p0x, p0y)),
-        min(intersect(cx, cy, t1, r, p0x, p0y, p1x, p1y), intersect(cx, cy, t1, r, p0x, p0y, p1x, p1y))
-    )
+        min(intersect(cx, cy, t1, r, p0x, p0y, p1x, p1y), intersect(cx, cy, t1, r, p0x, p0y, p1x, p1y)))
+
+
+class Sensor:
+    """
+    Represents the agent's 360-degree depth sensor, with
+    a specified range and angular resolution.
+    """
+
+    def __init__(self, env, radius, resolution):
+        """
+        Initializes the sensor model.
+
+        :param env: the environment in which to compute sensor readings
+        :param radius: the maximum range of the sensor
+        :param angle: the angular resolution of the sensor ()
+        """
+
+        self._env = env
+        self._radius = radius
+        self._resolution = resolution
+        self._angle = math.pi * 2.0 / resolution
+
+        self._vector = np.empty(resolution, dtype=float)
+
+    def update(self):
+        """
+        Updates the sensor vector.
+
+        :return: a 1D numpy array containing the new sensor vector.
+        """
+
+        # Get agent position and angle
+        x = self._env.car.x
+        y = self._env.car.y
+
+        # Iterate over sensor cones
+        start = self._env.car.theta
+        end = start + self._angle
+
+        for i in range(self._resolution):
+            dist = 1.0
+
+            # Compute ranges to cars
+            for car in env.cars:
+                dist = min(dist, point(x, y, start, end, self._radius, car.x, car.y))
+
+            # Compute ranges to walls
+            for wall in env.walls:
+                dist = min(dist, segment(x, y, start, end, self._radius, wall.x0, wall.y0, wall.x1, wall.y1))
+
+            # Update sensor vector
+            self._vector[i] = dist
+
+            # Update sensor angles
+            start = end
+            end += self._angle
+
+        return self._vector

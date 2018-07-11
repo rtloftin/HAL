@@ -1,3 +1,8 @@
+"""
+We may get rid of this file.
+"""
+
+
 class Wall:
     """
     A line segment representing a wall in the environment.

@@ -1,5 +1,6 @@
 import pyglet as pg
 import math
+import numpy as np
 
 
 class DriverCar:
@@ -17,24 +18,21 @@ class DriverCar:
         :param speed: the speed of the car
         """
 
+        # Define agent car
         self.x = x
         self.y = y
         self.theta = theta
         self.speed = speed
-
         self.phi = 0.0
 
+        # Define vehicle parameters
         self._min_steering = -math.pi / 10
         self._max_steering = math.pi / 10
-
         self._max_acceleration = 0.1
         self._min_acceleration = -0.1
-
         self._max_speed = 1.0
         self._min_speed = 0.0
-
         self._threshold = 0.05
-
         self._wheelbase = 0.5
 
     def update(self, acceleration, steering, delta):
@@ -101,13 +99,22 @@ class Environment:
     This will include a sensor model as well.
     """
 
-    def __init__(self):
+    def __init__(self, width, height, x, y, theta, speed):
         """
         Initializes the car's position and orientation.
         """
 
         self.width = 10
         self.height = 10
+
+        # Initialize agent car
+
+        # Initialize wall and NPC vehicle locations
+        self.walls = []
+        self.cars = []
+
+        # Initialize task dictionary
+        self.tasks = {}
 
     def update(self, acceleration, steering, delta):
         """
