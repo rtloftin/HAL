@@ -1,5 +1,4 @@
 import numpy as np
-import pyglet as pg
 from enum import IntEnum
 
 
