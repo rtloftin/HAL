@@ -121,27 +121,6 @@ class Wall:
         self.x1 = x1
         self.y1 = y1
 
-class Simulation:
-    """
-    Represents the state of the driver's car and
-    of the NPC cars.
-    """
-
-    def __init__(self, car, cars=[]):
-        """
-        Initializes the simulation object.
-
-        :param car: an object representing the agent's car
-        :param cars: a list of objects representing the NPC cars
-        """
-
-        self.car = car
-        self.cars = cars
-
-    def update(self, acceleration, steering, delta):
-        """
-        Updates the positions of all the cars.
-        """
 
 class Environment:
     """
@@ -160,8 +139,8 @@ class Environment:
         :param resolution:
         """
 
-        self.width = width
-        self.height = height
+        self._width = width
+        self._height = height
 
         self._radius = radius
         self._resolution = resolution
@@ -169,28 +148,18 @@ class Environment:
         self._car = None
         self._cars = []
 
-        self.walls = []
+        self._walls = []
 
-        self.tasks = {}
+        self._tasks = {}
         self._task = None
 
-        self._sensor_model = None
-        self._collision_model = None
+        self._sensor = None
+        self._collisions = None
 
-        self._sensor_vector = None
-        self._is_collision = False
+        self._reward = 0.0
+        self._complete = False
 
-    def _add_task(self, task, name):
-        """
-        Adds a new task to the environment.
-
-        :param task: the task object
-        :param name: the name of the task
-        """
-
-        self.tasks[name] = task
-
-    def _add_wall(self, x0, y0, x1, y1):
+    def add_wall(self, x0, y0, x1, y1):
         """
         Adds a new wall to the environment.
 
@@ -200,7 +169,17 @@ class Environment:
         :param y1: the second y coordinate of the wall
         """
 
-        self.walls.append(Wall(x0, y0, x1, y1))
+        self._walls.append(Wall(x0, y0, x1, y1))
+
+    def add_task(self, task, name):
+        """
+        Adds a new task to the environment.
+
+        :param task: the task object
+        :param name: the name of the task
+        """
+
+        self.tasks[name] = task
 
     def set_task(self, name):
         """
@@ -209,7 +188,16 @@ class Environment:
         :param name: the name of the task
         """
 
-        self._task = self.tasks[name]
+        self._task = self._tasks[name]
+
+    def get_tasks(self):
+        """
+        Gets a list of task names defined for this environment.
+
+        :return: a list of task names
+        """
+
+        return self._tasks.keys()
 
     def reset(self):
         """
@@ -219,12 +207,10 @@ class Environment:
         task defines how the environment will be initialized.
         """
 
-        if self._task is not None:
-            car, cars = self._task.reset()
+        self._car, self._cars = self._task.reset()
 
-            self._simulation = Simulation(car, cars)
-            self._sensor = Sensor(self, self._simulation, self._radius, self._resolution)
-            self._collision = Collision(self, self._simulation, 0.5)
+        self._sensor = Sensor(self._car, self._cars, self._walls, self._radius, self._resolution)
+        self._collisions = Collision(self._car, self._cars, self._walls, self._width, self._height, 0.5)
 
     def update(self, acceleration, steering, delta):
         """
@@ -241,39 +227,69 @@ class Environment:
 
         # Update NPC cars
         for car in self.cars:
-            car.update()
+            car.update(delta)
 
-        # Check for collisions
-        if self._collision.update():
-            reward = -1.0
-            done = True
-        elif self._task.complete():
-            reward = 1.0
-            done = true
-        else:
-            reward = 0.0
-            done = False
+        # Update collision model
+        self._collisions.update()
 
-        # Return new state, reward, and completion
-        return self.car.speed, self.car.phi, self._sensor.update(), reward, done
+        # Update sensor model
+        self._sensor.update()
 
-    def get_speed(self):
-        if self._car is not None:
-            return self._car.speed
+        # Update task model
+        self._reward, self._complete = self._task.evaluate(self.x, self.y, self._collisions.is_collision)
 
-        return 0.0
+    def expert(self):
+        """
+        Gets the output of the expert policy for the current
+        task in the current state.
 
-    def get_steering(self):
-        if self._car is not None:
-            return self._car.phi
+        :return: the acceleration and steering for the current state
+        """
 
-        return 0.0
+    @property
+    def width(self):
+        return self._width
 
-    def get_sensor(self):
-        return self._sensor_vector
+    @property
+    def height(self):
+        return self._height
 
-    def get_reward(self):
+    @property
+    def x(self):
+        return self._car.x
+
+    @property
+    def y(self):
+        return self._car.y
+
+    @property
+    def direction(self):
+        return self._car.theta
+
+    @property
+    def steering(self):
+        return self._car.phi
+
+    @property
+    def speed(self):
+        return self._car.speed
+
+    @property
+    def sensor(self):
+        return self._sensor.vector
+
+    @property
+    def reward(self):
         return self._reward
 
-    def check_complete(self):
+    @property
+    def complete(self):
         return self._complete
+
+    @property
+    def npc(self):
+        return self._cars
+
+    @property
+    def walls(self):
+        return self._walls

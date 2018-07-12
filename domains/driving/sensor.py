@@ -109,7 +109,7 @@ class Sensor:
         self._resolution = resolution
         self._angle = math.pi * 2.0 / resolution
 
-        self._vector = np.empty(resolution, dtype=float)
+        self.vector = np.empty(resolution, dtype=float)
 
     def update(self):
         """
@@ -138,10 +138,10 @@ class Sensor:
                 dist = min(dist, segment(x, y, start, end, self._radius, wall.x0, wall.y0, wall.x1, wall.y1))
 
             # Update sensor vector
-            self._vector[i] = dist
+            self.vector[i] = dist
 
             # Update sensor angles
             start = end
             end += self._angle
 
-        return self._vector
+        return self.vector

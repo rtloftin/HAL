@@ -2,17 +2,22 @@ import pyglet as pg
 import math
 
 
-def interactive_test():
+def visualize(env, task):
     """
     Starts an graphical, interactive simulation to allow
     for interactive testing of the driving domain.
 
     Uses the Pyglet game engine.
+
+    :param env: the environment to render
+    :param task: the specific task used to initialize the environment
     """
 
-    # Construct domain
-    env = Environment()
+    # Initialize the environment
+    env.set_Task(task)
+    env.reset()
 
+    # Simulation parameters
     control = {
         'acceleration': 0.0,
         'steering': 0.0
@@ -25,23 +30,34 @@ def interactive_test():
     height = 600
     window = pg.window.Window(width, height)
 
-    # Load the car sprite
-    car_image = pg.image.load('car_orange.png')
-    car_sprite = pg.sprite.Sprite(car_image, car_image.width / -2, car_image.height / -2)
+    # Load the car sprites
+    orange_car = pg.image.load('car_orange.png')
+    white_car = pg.image.load('car_white.png')
+
+    agent_sprite = pg.sprite.Sprite(orange_car, orange_car.width / -2, orange_car.height / -2)
+    npc_sprite = pg.sprite.Sprite(white_car, white_car.width / -2, white_car.height / -2)
+
     car_scale = 1 / car_sprite.width
 
-    # Define vertex lists
-    car = pg.graphics.vertex_list(
-        4,
-        ('v2f', (-.5, -.5, -.5, .5, .5, .5, .5, -.5)),
-        ('c3B', (125, 250, 0, 125, 250, 0, 125, 250, 0, 125, 250, 0))
-    )
+    # Define the map vertex batch
+    background = pg.graphics.batch()
+    background.add(4, pg.gl.GL_QUADS, None,
+                   ('v2f', (0, 0, 0, 10, 10, 10, 10, 0)),
+                   ('c3B', (65, 105, 225, 65, 105, 225, 65, 105, 225, 65, 105, 225)))
 
+    for wall in env.walls:
+        background.add(2, pg.gl.GL_LINES, None,
+                       ('v2f', (wall.x0, wall.y0, wall.x1, wall.y1))
+                       ('c3b', (255, 255, 255, 255, 255, 255)))
+
+    # Define background vertices
     background = pg.graphics.vertex_list(
         4,
         ('v2f', (0, 0, 0, 10, 10, 10, 10, 0)),
         ('c3B', (65, 105, 225, 65, 105, 225, 65, 105, 225, 65, 105, 225))
     )
+
+
 
     # Define update loop
     def update(dt):

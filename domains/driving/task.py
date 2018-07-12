@@ -26,14 +26,12 @@ class Task:
         self._y1 = y1
         self._rsquared = r * r
 
-    def evaluate(self, x, y, theta, speed, collision):
+    def evaluate(self, x, y, collision):
         """
         Determines if the agent has completed the task
 
         :param x: the x coordinate of the car
         :param y: the y coordinate of the car
-        :param theta: the direction of the car
-        :param speed: the speed of the car
         :param collision: whether the car is colliding with something
         :return: the reward value, and a boolean indicating whether the task is complete
         """

@@ -75,28 +75,33 @@ class Collision:
         self._height = height
         self._rsquared = radius * radius
 
+        self.is_collision = False
+
     def update(self):
         """
         Determines whether the agent's car is currently colliding with a wall or another car.
-
-        :return: True if there is a collision, False otherwise
         """
 
         # Check if the car is within the environment boundaries
         if self._car.x < 0.0 or self._car.x > self._width:
-            return True
+            self.is_collision = True
+            return self.is_collision
 
         if self._car.y < 0.0 or self._car.y > self._height:
-            return True
+            self.is_collision = True
+            return self.is_collision
 
         # Check for collisions with cars
         for car in self._cars:
             if point(self._car.x, self._car.y, car.x, car.y) <= 4 * self._rsquared:
-                return True
+                self.is_collision = True
+                return self.is_collision
 
         # Check for collisions with walls
         for wall in self._walls:
             if segment(self._car.x, self._car.y, wall.x0, wall.y0, wall.x1, wall.y1) <= self._rsquared:
-                return True
+                self.is_collision = True
+                return self.is_collision
 
-        return False
+        self.is_collision = False
+        return self.is_collision
