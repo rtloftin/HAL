@@ -56,15 +56,23 @@ class Collision:
     Represents the collision detection model for a given environment.
     """
 
-    def __init__(self, env, radius):
+    def __init__(self, car, cars, walls, width, height, radius):
         """
         Initializes the collision detection model.
 
-        :param env: the environment in which to do collision detection
+        :param car: the agent's car
+        :param cars: the NPC cars
+        :param walls: the walls
+        :param width: the width of the environment
+        :param height: the height of the environment
         :param radius: the radius of the collision circle around each car
         """
 
-        self._env = env
+        self._car = car
+        self._cars = cars
+        self._walls = walls
+        self._width = width
+        self._height = height
         self._rsquared = radius * radius
 
     def update(self):
@@ -74,14 +82,21 @@ class Collision:
         :return: True if there is a collision, False otherwise
         """
 
+        # Check if the car is within the environment boundaries
+        if self._car.x < 0.0 or self._car.x > self._width:
+            return True
+
+        if self._car.y < 0.0 or self._car.y > self._height:
+            return True
+
         # Check for collisions with cars
-        for car in self._env.cars:
-            if point(self._env.car.x, self._env.car.y, car.x, car.y) <= 4 * self._rsquared:
+        for car in self._cars:
+            if point(self._car.x, self._car.y, car.x, car.y) <= 4 * self._rsquared:
                 return True
 
         # Check for collisions with walls
-        for wall in self._env.walls:
-            if segment(self._env.car.x, self._env.car.y, wall.x0, wall.y0, wall.x1, wall.y1) <= self._rsquared:
+        for wall in self._walls:
+            if segment(self._car.x, self._car.y, wall.x0, wall.y0, wall.x1, wall.y1) <= self._rsquared:
                 return True
 
         return False

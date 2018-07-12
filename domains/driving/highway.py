@@ -7,3 +7,13 @@ while most other cars are randomly generated.  Tasks include changing
 to the right and left lanes, taking the exit, and passing a car in
 front of the agent's car, before returning to the center lane.
 """
+
+
+def highway():
+    """
+    Constructs an instance of the intersection environment.
+
+    :return: an instance of the intersection environment
+    """
+
+    return None

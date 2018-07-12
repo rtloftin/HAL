@@ -27,7 +27,7 @@ def point(cx, cy, t1, t2, r, px, py):
     return 1.0
 
 
-def intersect(cx, cy, t, p0x, p0y, p1x, p1y):
+def intersect(cx, cy, t, r, p0x, p0y, p1x, p1y):
     """
     Computes the distance to the intersection between a sensor vector
     and the given line segment.
@@ -91,16 +91,20 @@ class Sensor:
     a specified range and angular resolution.
     """
 
-    def __init__(self, env, radius, resolution):
+    def __init__(self, car, cars, walls, radius, resolution):
         """
         Initializes the sensor model.
 
-        :param env: the environment in which to compute sensor readings
+        :param car: the agent's car
+        :param cars: the NPC cars
+        :param walls: the walls
         :param radius: the maximum range of the sensor
-        :param angle: the angular resolution of the sensor ()
+        :param angle: the angular resolution of the sensor
         """
 
-        self._env = env
+        self._car = car
+        self._cars = cars
+        self._walls = walls
         self._radius = radius
         self._resolution = resolution
         self._angle = math.pi * 2.0 / resolution
@@ -115,22 +119,22 @@ class Sensor:
         """
 
         # Get agent position and angle
-        x = self._env.car.x
-        y = self._env.car.y
+        x = self._car.x
+        y = self._car.y
 
         # Iterate over sensor cones
-        start = self._env.car.theta
+        start = self._car.theta
         end = start + self._angle
 
         for i in range(self._resolution):
             dist = 1.0
 
             # Compute ranges to cars
-            for car in env.cars:
+            for car in self._cars:
                 dist = min(dist, point(x, y, start, end, self._radius, car.x, car.y))
 
             # Compute ranges to walls
-            for wall in env.walls:
+            for wall in self._walls:
                 dist = min(dist, segment(x, y, start, end, self._radius, wall.x0, wall.y0, wall.x1, wall.y1))
 
             # Update sensor vector

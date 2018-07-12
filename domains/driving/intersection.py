@@ -7,3 +7,13 @@ coming from one direction, and random NPC cars coming from the other directions.
 Tasks include turning left and right, and going straight.  Each road has two lanes,
 and reward is given for reaching the desired lane without hitting anything.
 """
+
+
+def intersection():
+    """
+    Constructs an instance of the intersection environment.
+
+    :return: an instance of the intersection environment
+    """
+
+    return None

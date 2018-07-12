@@ -6,9 +6,7 @@ Specific environments will extend these classes.
 WE MAY WANT TO REORGANIZE THIS API AT SOME POINT
 """
 
-import pyglet as pg
 import math
-import numpy as np
 import sensor.Sensor
 import collision.Collision
 
@@ -123,6 +121,27 @@ class Wall:
         self.x1 = x1
         self.y1 = y1
 
+class Simulation:
+    """
+    Represents the state of the driver's car and
+    of the NPC cars.
+    """
+
+    def __init__(self, car, cars=[]):
+        """
+        Initializes the simulation object.
+
+        :param car: an object representing the agent's car
+        :param cars: a list of objects representing the NPC cars
+        """
+
+        self.car = car
+        self.cars = cars
+
+    def update(self, acceleration, steering, delta):
+        """
+        Updates the positions of all the cars.
+        """
 
 class Environment:
     """
@@ -131,34 +150,35 @@ class Environment:
     This will include a sensor model as well.
     """
 
-    def __init__(self, width, height):
+    def __init__(self, width, height, radius, resolution):
         """
-        Initializes the car's position and orientation.
+        Initializes the environment.
+
+        :param width:
+        :param height:
+        :param radius:
+        :param resolution:
         """
 
         self.width = width
         self.height = height
 
-        # Initialize wall list
+        self._radius = radius
+        self._resolution = resolution
+
+        self._car = None
+        self._cars = []
+
         self.walls = []
 
-        # Initialize collision model
-        self._collision = Collision(env, 0.5)
-
-        # Initialize NPC car list
-        self.cars = []
-
-        # Initialize the agent's car
-        self.car = None
-
-        # Initialize the sensor model
-        self._sensor = None
-
-        # Initialize task dictionary
         self.tasks = {}
-
-        # Initialize the current task
         self._task = None
+
+        self._sensor_model = None
+        self._collision_model = None
+
+        self._sensor_vector = None
+        self._is_collision = False
 
     def _add_task(self, task, name):
         """
@@ -182,40 +202,6 @@ class Environment:
 
         self.walls.append(Wall(x0, y0, x1, y1))
 
-    def _set_driver_car(self, x, y, theta, speed):
-        """
-        Resets the position of the agent's car.
-
-        :param x: the initial x coordinate of the car
-        :param y: the initial y coordinate of the car
-        :param theta: the initial direction of the car
-        :param speed: the initial speed of the car
-        """
-
-        self.car = Car(x, y, theta, speed)
-
-    def _set_sensor(self, radius, resolution):
-        """
-        Sets the sensor model for the agent's car.
-
-        :param radius: the range of the sensor
-        :param resolution: the angular resolution of the sensor, the number of sensor cones
-        """
-
-        self._sensor = Sensor(self, radius, resolution)
-
-    def _add_npc_car(self, x, y, theta, speed):
-        """
-        Adds a new NPC car.
-
-        :param x: the initial x coordinate of the car
-        :param y: the initial y coordinate of the car
-        :param theta: the direction of the car
-        :param speed: the speed of the car
-        """
-
-        self.cars.append(NPCCar(x, y, theta, speed))
-
     def set_task(self, name):
         """
         Sets the current task.
@@ -233,12 +219,12 @@ class Environment:
         task defines how the environment will be initialized.
         """
 
-        self.car = None
-        self.cars = []
+        if self._task is not None:
+            car, cars = self._task.reset()
 
-        self._task.reset(self)
-
-        return self.car.speed, self.car.phi, self._sensor.update, 0.0, False
+            self._simulation = Simulation(car, cars)
+            self._sensor = Sensor(self, self._simulation, self._radius, self._resolution)
+            self._collision = Collision(self, self._simulation, 0.5)
 
     def update(self, acceleration, steering, delta):
         """
@@ -270,3 +256,24 @@ class Environment:
 
         # Return new state, reward, and completion
         return self.car.speed, self.car.phi, self._sensor.update(), reward, done
+
+    def get_speed(self):
+        if self._car is not None:
+            return self._car.speed
+
+        return 0.0
+
+    def get_steering(self):
+        if self._car is not None:
+            return self._car.phi
+
+        return 0.0
+
+    def get_sensor(self):
+        return self._sensor_vector
+
+    def get_reward(self):
+        return self._reward
+
+    def check_complete(self):
+        return self._complete
