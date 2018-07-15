@@ -1,7 +1,7 @@
 """
 Defines the core classes representing a driving environment.
 
-Specific environments will extend these classes.
+Specific environments will extend the environment class
 
 WE MAY WANT TO REORGANIZE THIS API AT SOME POINT
 """

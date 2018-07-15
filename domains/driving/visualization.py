@@ -25,6 +25,8 @@ def visualize(env, task):
 
     delta = 0.05
 
+    is_paused = False
+
     # Set up the Pyglet window
     width = 600
     height = 600
@@ -37,57 +39,66 @@ def visualize(env, task):
     agent_sprite = pg.sprite.Sprite(orange_car, orange_car.width / -2, orange_car.height / -2)
     npc_sprite = pg.sprite.Sprite(white_car, white_car.width / -2, white_car.height / -2)
 
-    car_scale = 1 / car_sprite.width
+    agent_scale = 1 / agent_sprite.width
+    npc_scale = 1 / npc_sprite.width
 
     # Define the map vertex batch
     background = pg.graphics.batch()
     background.add(4, pg.gl.GL_QUADS, None,
-                   ('v2f', (0, 0, 0, 10, 10, 10, 10, 0)),
+                   ('v2f', (0, 0, 0, env.height, env.width, env.height, env.width, 0)),
                    ('c3B', (65, 105, 225, 65, 105, 225, 65, 105, 225, 65, 105, 225)))
 
     for wall in env.walls:
         background.add(2, pg.gl.GL_LINES, None,
-                       ('v2f', (wall.x0, wall.y0, wall.x1, wall.y1))
+                       ('v2f', (wall.x0, wall.y0, wall.x1, wall.y1)),
                        ('c3b', (255, 255, 255, 255, 255, 255)))
 
-    # Define background vertices
-    background = pg.graphics.vertex_list(
-        4,
-        ('v2f', (0, 0, 0, 10, 10, 10, 10, 0)),
-        ('c3B', (65, 105, 225, 65, 105, 225, 65, 105, 225, 65, 105, 225))
-    )
-
-
+    # Set line width
+    pg.gl.glLineWidth(5)
 
     # Define update loop
     def update(dt):
-        env.update(control['acceleration'], control['steering'], dt)
+        nonlocal is_paused
+
+        if not is_paused:
+            env.update(control['acceleration'], control['steering'], dt)
+
+            if env.complete:
+                is_paused = True
 
     # Define rendering loop
     def on_draw():
         window.clear()
 
         pg.gl.glLoadIdentity()
-        pg.gl.glScalef(60, 60, 1)
+        pg.gl.glScalef(width / env.width, height / env.height, 1)
 
         # Draw background
-        background.draw(pg.gl.GL_QUADS)
+        background.draw()
+
+        # Draw NPC cars
+        for car in env.npc:
+            pg.gl.glPushMatrix()
+            pg.gl.glTranslatef(car.x, car.y, 0)
+            pg.gl.glRotatef(90 + 180 * car.theta / math.pi, 0, 0, 1)
+            pg.gl.glScalef(npc_scale, npc_scale, 1)
+            npc_sprite.draw()
+            pg.gl.glPopMatrix()
 
         # Draw agent
         pg.gl.glPushMatrix()
         pg.gl.glTranslatef(env.x, env.y, 0)
         pg.gl.glRotatef(90 + 180 * env.theta / math.pi, 0, 0, 1)
-
-        pg.gl.glScalef(car_scale, car_scale, 1)
-        car_sprite.draw()
-        # car.draw(pg.gl.GL_QUADS)
-
+        pg.gl.glScalef(agent_scale, agent_scale, 1)
+        agent_sprite.draw()
         pg.gl.glPopMatrix()
 
     window.on_draw = on_draw
 
     # Define key handler
     def on_key_press(symbol, modifier):
+        nonlocal is_paused
+
         if pg.window.key.UP == symbol:
             if control['acceleration'] < 0.1:
                 control['acceleration'] += 0.05
@@ -100,6 +111,9 @@ def visualize(env, task):
         elif pg.window.key.RIGHT == symbol:
             if control['steering'] < 0.4:
                 control['steering'] += 0.2
+        elif pg.window.key.ENTER == symbol:
+            env.reset()
+            is_paused = False
 
     window.on_key_press = on_key_press
 
