@@ -14,7 +14,7 @@ def visualize(env, task):
     """
 
     # Initialize the environment
-    env.set_Task(task)
+    env.set_task(task)
     env.reset()
 
     # Simulation parameters
@@ -33,8 +33,8 @@ def visualize(env, task):
     window = pg.window.Window(width, height)
 
     # Load the car sprites
-    orange_car = pg.image.load('car_orange.png')
-    white_car = pg.image.load('car_white.png')
+    orange_car = pg.image.load('domains/driving/car_orange.png')
+    white_car = pg.image.load('domains/driving/car_white.png')
 
     agent_sprite = pg.sprite.Sprite(orange_car, orange_car.width / -2, orange_car.height / -2)
     npc_sprite = pg.sprite.Sprite(white_car, white_car.width / -2, white_car.height / -2)
@@ -43,18 +43,17 @@ def visualize(env, task):
     npc_scale = 1 / npc_sprite.width
 
     # Define the map vertex batch
-    background = pg.graphics.batch()
+    background = pg.graphics.Batch()
+
     background.add(4, pg.gl.GL_QUADS, None,
                    ('v2f', (0, 0, 0, env.height, env.width, env.height, env.width, 0)),
                    ('c3B', (65, 105, 225, 65, 105, 225, 65, 105, 225, 65, 105, 225)))
 
-    for wall in env.walls:
-        background.add(2, pg.gl.GL_LINES, None,
-                       ('v2f', (wall.x0, wall.y0, wall.x1, wall.y1)),
-                       ('c3b', (255, 255, 255, 255, 255, 255)))
 
-    # Set line width
-    pg.gl.glLineWidth(5)
+    for wall in env.walls:
+        # print("Wall added - (", wall.x0, ",", wall.y0, "),(", wall.x1, ",", wall.y1, ")")
+        background.add(2, pg.gl.GL_LINES, None,
+                       ('v2f', (wall.x0, wall.y0, wall.x1, wall.y1)))
 
     # Define update loop
     def update(dt):
@@ -69,6 +68,9 @@ def visualize(env, task):
     # Define rendering loop
     def on_draw():
         window.clear()
+
+        pg.gl.glLineWidth(5)
+        # pg.gl.glColor3f(1.0, 1.0, 1.0)
 
         pg.gl.glLoadIdentity()
         pg.gl.glScalef(width / env.width, height / env.height, 1)
@@ -88,7 +90,7 @@ def visualize(env, task):
         # Draw agent
         pg.gl.glPushMatrix()
         pg.gl.glTranslatef(env.x, env.y, 0)
-        pg.gl.glRotatef(90 + 180 * env.theta / math.pi, 0, 0, 1)
+        pg.gl.glRotatef(90 + 180 * env.direction / math.pi, 0, 0, 1)
         pg.gl.glScalef(agent_scale, agent_scale, 1)
         agent_sprite.draw()
         pg.gl.glPopMatrix()

@@ -8,10 +8,10 @@ Tasks include turning left and right, and going straight.  Each road has two lan
 and reward is given for reaching the desired lane without hitting anything.
 """
 
-import driving.Environment
-import driving.DriverCar
-import driving.NPCCar
-import task.Task
+from .driving import Environment
+from .driving import DriverCar
+from .driving import NPCCar
+from .task import Task
 
 
 def intersection():
@@ -42,7 +42,7 @@ def intersection():
     class Straight(Task):
 
         def __init__(self):
-            Task.__init__(11, 16, 11, 20, 1)
+            Task.__init__(self, 11, 16, 11, 20, 1)
 
         def reset(self):
             car = DriverCar(11, 1, 0, 0)
@@ -52,7 +52,7 @@ def intersection():
 
     class Left(Task):
         def __init__(self):
-            Task.__init__(4, 11, 0, 11, 1)
+            Task.__init__(self, 4, 11, 0, 11, 1)
 
         def reset(self):
             car = DriverCar(11, 1, 0, 0)
@@ -62,7 +62,7 @@ def intersection():
 
     class Right(Task):
         def __init__(self):
-            Task.__init__(9, 16, 20, 16, 1)
+            Task.__init__(self, 9, 16, 20, 16, 1)
 
         def reset(self):
             car = DriverCar(11, 1, 0, 0)

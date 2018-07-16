@@ -81,7 +81,7 @@ def segment(cx, cy, t1, t2, r, p0x, p0y, p1x, p1y):
     """
 
     return min(
-        min(point(cx, cy, t1, t2, r, p0x, p0y), point(x, cy, t1, t2, r, p0x, p0y)),
+        min(point(cx, cy, t1, t2, r, p0x, p0y), point(cx, cy, t1, t2, r, p0x, p0y)),
         min(intersect(cx, cy, t1, r, p0x, p0y, p1x, p1y), intersect(cx, cy, t1, r, p0x, p0y, p1x, p1y)))
 
 

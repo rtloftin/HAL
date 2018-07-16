@@ -7,8 +7,8 @@ WE MAY WANT TO REORGANIZE THIS API AT SOME POINT
 """
 
 import math
-import sensor.Sensor
-import collision.Collision
+from .sensor import Sensor
+from .collision import Collision
 
 
 class DriverCar:
@@ -179,7 +179,7 @@ class Environment:
         :param name: the name of the task
         """
 
-        self.tasks[name] = task
+        self._tasks[name] = task
 
     def set_task(self, name):
         """
@@ -223,10 +223,10 @@ class Environment:
         """
 
         # Update driver car
-        self.car.update(acceleration, steering, delta)
+        self._car.update(acceleration, steering, delta)
 
         # Update NPC cars
-        for car in self.cars:
+        for car in self._cars:
             car.update(delta)
 
         # Update collision model

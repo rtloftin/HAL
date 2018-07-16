@@ -8,10 +8,10 @@ to the right and left lanes, taking the exit, and passing a car in
 front of the agent's car, before returning to the center lane.
 """
 
-import driving.Environment
-import driving.DriverCar
-import driving.NPCCar
-import task.Task
+from .driving import Environment
+from .driving import DriverCar
+from .driving import NPCCar
+from .task import Task
 
 
 def highway():
@@ -35,7 +35,7 @@ def highway():
     class Exit(Task):
 
         def __init__(self):
-            Task.__init__(14, 15.5, 22, 23.5, 1)
+            Task.__init__(self, 14, 15.5, 22, 23.5, 1)
 
         def reset(self):
             car = DriverCar(9, 1, 0, 0)
@@ -45,7 +45,7 @@ def highway():
 
     class Left(Task):
         def __init__(self):
-            Task.__init__(7, 12, 7, 20, 1)
+            Task.__init__(self, 7, 12, 7, 20, 1)
 
         def reset(self):
             car = DriverCar(9, 1, 0, 0)
@@ -55,7 +55,7 @@ def highway():
 
     class Right(Task):
         def __init__(self):
-            Task.__init__(11, 12, 11, 20, 1)
+            Task.__init__(self, 11, 12, 11, 20, 1)
 
         def reset(self):
             car = DriverCar(9, 1, 0, 0)
