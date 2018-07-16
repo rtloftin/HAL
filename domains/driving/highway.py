@@ -8,10 +8,9 @@ to the right and left lanes, taking the exit, and passing a car in
 front of the agent's car, before returning to the center lane.
 """
 
-from .driving import Environment
-from .driving import DriverCar
-from .driving import NPCCar
-from .task import Task
+from .environment import Environment
+from .environment import DriverCar, NPCCar
+from .tasks import Task
 
 
 def highway():
@@ -22,43 +21,43 @@ def highway():
     """
 
     # Initialize environment
-    env = Environment(20, 20, 5, 20)
+    env = Environment(20.0, 20.0, 5.0, 20)
 
-    env.add_wall(6, 0, 6, 20)
-    env.add_wall(12, 0, 12, 12)
-    env.add_wall(12, 15, 12, 20)
-    env.add_wall(12, 12, 20, 20)
-    env.add_wall(12, 15, 17, 20)
+    env.add_wall(6.0, 0.0, 6.0, 20.0)
+    env.add_wall(12.0, 0.0, 12.0, 12.0)
+    env.add_wall(12.0, 15.0, 12.0, 20.0)
+    env.add_wall(12.0, 12.0, 20.0, 20.0)
+    env.add_wall(12.0, 15.0, 17.0, 20.0)
 
     # Define tasks
 
     class Exit(Task):
 
         def __init__(self):
-            Task.__init__(self, 14, 15.5, 22, 23.5, 1)
+            Task.__init__(self, 14.0, 15.5, 22, 23.5, 1.0)
 
         def reset(self):
-            car = DriverCar(9, 1, 0, 0)
+            car = DriverCar(9.0, 1.0, 0.0, 0.0)
             npc = []
 
             return car, npc
 
     class Left(Task):
         def __init__(self):
-            Task.__init__(self, 7, 12, 7, 20, 1)
+            Task.__init__(self, 7.0, 12.0, 7.0, 20, 1.0)
 
         def reset(self):
-            car = DriverCar(9, 1, 0, 0)
+            car = DriverCar(9.0, 1.0, 0.0, 0.0)
             npc = []
 
             return car, npc
 
     class Right(Task):
         def __init__(self):
-            Task.__init__(self, 11, 12, 11, 20, 1)
+            Task.__init__(self, 11.0, 12.0, 11.0, 20.0, 1.0)
 
         def reset(self):
-            car = DriverCar(9, 1, 0, 0)
+            car = DriverCar(9.0, 1.0, 0.0, 0.0)
             npc = []
 
             return car, npc

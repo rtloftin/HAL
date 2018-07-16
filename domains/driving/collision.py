@@ -42,7 +42,7 @@ def segment(x, y, x0, y0, x1, y1):
     if dot <= 0.0:
         return da
 
-    db = bx * bx + by + by
+    db = bx * bx + by * by
     p = dot * dot / db
 
     if p > db:
@@ -99,6 +99,7 @@ class Collision:
 
         # Check for collisions with walls
         for wall in self._walls:
+            # print(segment(self._car.x, self._car.y, wall.x0, wall.y0, wall.x1, wall.y1))
             if segment(self._car.x, self._car.y, wall.x0, wall.y0, wall.x1, wall.y1) <= self._rsquared:
                 self.is_collision = True
                 return self.is_collision

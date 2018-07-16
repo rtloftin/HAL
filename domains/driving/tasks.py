@@ -50,7 +50,7 @@ class Task:
         if dot <= 0.0:
             return 0.0, False
 
-        db = bx * bx + by + by
+        db = bx * bx + by * by
         p = dot * dot / db
 
         if p > db:
