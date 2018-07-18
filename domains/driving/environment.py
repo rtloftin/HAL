@@ -158,6 +158,8 @@ class Environment:
         :return: the acceleration and steering for the current state
         """
 
+        return 0.0, 0.0
+
     @property
     def width(self):
         return self._width

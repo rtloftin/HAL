@@ -1,25 +1,21 @@
 import pyglet as pg
+from .sensor import SensorState
+from .environment import Action
 
 
-def interactive_test():
+def visualize(env, task, manual=True):
     """
-    Starts an graphical, interactive simulation to allow
-    for interactive testing of the navigation domain.
+    Starts an graphical, interactive simulation of the given navigation environment.
 
     Uses the Pyglet game engine.
     """
 
-    # Construct map
-    map = Map(50, 50)
-    map.obstacle(10, 10, 4, 30)
-    map.obstacle(36, 10, 4, 30)
-    map.obstacle(10, 36, 30, 4)
-
-    # Construct domain
-    env = Environment(occupancy=map.occupancy(), radius=5)
+    # Initialize environment
+    env.set_task(task)
+    env.reset()
 
     # Set the size in pixels of each drawn cell
-    scale = 10
+    scale = 20
 
     # Set up the Pyglet window
     window = pg.window.Window(env.width * scale, env.height * scale)
@@ -31,16 +27,22 @@ def interactive_test():
         ('c3B', (65, 105, 225, 65, 105, 225, 65, 105, 225, 65, 105, 225))
     )
 
-    blocked = pg.graphics.vertex_list(
+    obstacle = pg.graphics.vertex_list(
         4,
         ('v2i', (0, 0, 0, 1, 1, 1, 1, 0)),
         ('c3B', (255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255))
     )
 
-    hidden = pg.graphics.vertex_list(
+    unknown_clear = pg.graphics.vertex_list(
         4,
         ('v2i', (0, 0, 0, 1, 1, 1, 1, 0)),
-        ('c3B', (50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50))
+        ('c3B', (30, 50, 110, 30, 50, 110, 30, 50, 110, 30, 50, 110))
+    )
+
+    unknown_obstacle = pg.graphics.vertex_list(
+        4,
+        ('v2i', (0, 0, 0, 1, 1, 1, 1, 0)),
+        ('c3B', (120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120))
     )
 
     agent = pg.graphics.vertex_list(
@@ -53,19 +55,31 @@ def interactive_test():
     def on_draw():
         window.clear()
 
-        # Draw visible map
+        # Draw map
         for x in range(env.width):
             for y in range(env.height):
                 pg.gl.glLoadIdentity()
                 pg.gl.glScalef(scale, scale, 1)
                 pg.gl.glTranslatef(x, y, 0)
 
-                if 2 == env.map[y, x]:
-                    blocked.draw(pg.gl.GL_QUADS)
-                elif 1 == env.map[y, x]:
+                if SensorState.CLEAR == env.map[x, y]:
                     clear.draw(pg.gl.GL_QUADS)
+                elif SensorState.OCCUPIED == env.map[x, y]:
+                    obstacle.draw(pg.gl.GL_QUADS)
                 else:
-                    hidden.draw(pg.gl.GL_QUADS)
+                    if env.occupancy[x, y]:
+                        unknown_obstacle.draw(pg.gl.GL_QUADS)
+                    else:
+                        unknown_clear.draw(pg.gl.GL_QUADS)
+
+        # Draw goal
+        pg.gl.glLoadIdentity()
+        pg.gl.glScalef(scale, scale, 1)
+        pg.gl.glTranslatef(env.goal_x, env.goal_y, 0)
+
+        pg.graphics.draw(4, pg.gl.GL_QUADS,
+                         ('v2f', (0, 0, 0, env.goal_height, env.goal_width, env.goal_height, env.goal_width, 0)),
+                         ('c3B', (255, 140, 0, 255, 140, 0, 255, 140, 0, 255, 140, 0)))
 
         # Draw agent
         pg.gl.glLoadIdentity()
@@ -76,17 +90,31 @@ def interactive_test():
 
     window.on_draw = on_draw
 
-    # Define key handler
-    def on_key_press(symbol, modifier):
-        if pg.window.key.UP == symbol:
-            env.update(Action.UP)
-        elif pg.window.key.DOWN == symbol:
-            env.update(Action.DOWN)
-        elif pg.window.key.LEFT == symbol:
-            env.update(Action.LEFT)
-        elif pg.window.key.RIGHT == symbol:
-            env.update(Action.RIGHT)
+    # Decide whether we are doing manual or agent control
+    if manual:
+        def on_key_press(symbol, modifier):
+            if pg.window.key.UP == symbol:
+                env.update(Action.UP)
+            elif pg.window.key.DOWN == symbol:
+                env.update(Action.DOWN)
+            elif pg.window.key.LEFT == symbol:
+                env.update(Action.LEFT)
+            elif pg.window.key.RIGHT == symbol:
+                env.update(Action.RIGHT)
+            elif pg.window.key.SPACE == symbol:
+                env.reset()
 
-    window.on_key_press = on_key_press
+        window.on_key_press = on_key_press
+    else:
+        def on_key_press(symbol, modifier):
+            if pg.window.key.SPACE == symbol:
+                env.reset()
+
+        window.on_key_press = on_key_press
+
+        def update():
+            env.update(env.expert())
+
+        pg.clock.schedule_interval(update, 0.7)
 
     pg.app.run()
