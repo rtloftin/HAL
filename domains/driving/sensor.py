@@ -16,13 +16,23 @@ def point(cx, cy, t1, t2, r, px, py):
     :return: the scaled distance to the target if it is in range, 1 otherwise
     """
 
-    x = cx - px
+    x = px - cx
     y = py - cy
     d = math.sqrt(x * x + y * y)
-    theta = math.atan(x / y)
 
-    if t1 <= theta <= t2:
-        return min(d / r, 1.0)
+    if d > r:
+        return 1.0
+
+    x1 = -r * math.sin(t1)
+    y1 = r * math.cos(t1)
+    x2 = -r * math.sin(t2)
+    y2 = r * math.cos(t2)
+
+    a = x1 * y - y1 * x
+    b = x * y2 - y * x2
+
+    if a > 0 and b > 0:
+        return d / r
 
     return 1.0
 
@@ -43,12 +53,12 @@ def intersect(cx, cy, t, r, p0x, p0y, p1x, p1y):
     :return: the scaled distance to the intersection if it exists, 1 otherwise
     """
 
-    a = p1x - p0x
-    b = r * math.sin(t)
-    c = p1y - p0y
-    d = -r * math.cos(t)
-    e = cx - p0x
-    f = cy - p0y
+    a = -r * math.sin(t)
+    b = p0x - p1x
+    c = r * math.cos(t)
+    d = p0y - p1y
+    e = p0x - cx
+    f = p0y - cy
 
     det = (a * d) - (b * c)
 
@@ -59,7 +69,7 @@ def intersect(cx, cy, t, r, p0x, p0y, p1x, p1y):
     u = ((a * f) - (c * e)) / det
 
     if 0.0 <= t <= 1.0 and 0.0 <= u <= 1.0:
-        return u
+        return t
 
     return 1.0
 
@@ -81,8 +91,8 @@ def segment(cx, cy, t1, t2, r, p0x, p0y, p1x, p1y):
     """
 
     return min(
-        min(point(cx, cy, t1, t2, r, p0x, p0y), point(cx, cy, t1, t2, r, p0x, p0y)),
-        min(intersect(cx, cy, t1, r, p0x, p0y, p1x, p1y), intersect(cx, cy, t1, r, p0x, p0y, p1x, p1y)))
+        min(point(cx, cy, t1, t2, r, p0x, p0y), point(cx, cy, t1, t2, r, p1x, p1y)),
+        min(intersect(cx, cy, t1, r, p0x, p0y, p1x, p1y), intersect(cx, cy, t2, r, p0x, p0y, p1x, p1y)))
 
 
 class Sensor:
@@ -107,7 +117,7 @@ class Sensor:
         self._walls = walls
         self._radius = radius
         self._resolution = resolution
-        self._angle = math.pi * 2.0 / resolution
+        self._angle = 2 * math.pi / resolution
 
         self.vector = np.empty(resolution, dtype=float)
 
@@ -126,7 +136,7 @@ class Sensor:
         start = self._car.theta
         end = start + self._angle
 
-        for i in range(self._resolution):
+        for index in range(self._resolution):
             dist = 1.0
 
             # Compute ranges to cars
@@ -138,7 +148,7 @@ class Sensor:
                 dist = min(dist, segment(x, y, start, end, self._radius, wall.x0, wall.y0, wall.x1, wall.y1))
 
             # Update sensor vector
-            self.vector[i] = dist
+            self.vector[index] = dist
 
             # Update sensor angles
             start = end

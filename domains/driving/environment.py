@@ -9,6 +9,8 @@ WE MAY WANT TO REORGANIZE THIS API AT SOME POINT
 import math
 from .sensor import Sensor
 from .collision import Collision
+from .cars import DriverCar
+from .tasks import Task
 
 
 class Wall:
@@ -203,3 +205,33 @@ class Environment:
     @property
     def walls(self):
         return self._walls
+
+
+def empty():
+    """
+    Builds an empty environment to test the driving dynamics.
+
+    :return: an empty driving environment
+    """
+
+    # Initialize environment
+    env = Environment(20.0, 20.0, 5.0, 20)
+
+    # Define task
+
+    class Nothing(Task):
+
+        def __init__(self):
+            Task.__init__(self, -1.0, -1.0, -2.0, -2.0, 1.0)
+
+        def reset(self):
+            car = DriverCar(10.0, 1.0, 0.0, 0.0)
+            npc = []
+
+            return car, npc
+
+    env.add_task(Nothing(), "none")
+    env.set_task("none")
+    env.reset()
+
+    return env

@@ -37,6 +37,11 @@ class DriverCar:
         """
         Updates the state of the car.
 
+        To make things easier, replaced the steering rate (the rate at which
+        the steering wheel turns, with the steering angle).  This means that
+        if we set the steering angle to zero, the steering angle will be zero
+        right away.  This makes it much easier to go in a straight line.
+
         :param acceleration: acceleration of the vehicle (negative for braking)
         :param steering: steering rate (positive for left negative for right)
         :param delta: the size of the time step for this update
@@ -48,7 +53,7 @@ class DriverCar:
 
         # Update speed, steering angle
         self.speed = max(self._min_speed, min(self._max_speed, self.speed + acceleration * delta))
-        self.phi = max(self._min_steering, min(self._max_steering, self.phi + steering * delta))
+        self.phi = max(self._min_steering, min(self._max_steering, steering))
 
         # Update orientation
         if not (-self._threshold < self.phi < self._threshold):
