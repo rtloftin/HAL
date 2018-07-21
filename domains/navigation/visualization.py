@@ -90,6 +90,15 @@ def visualize(env, task, manual=True):
 
     window.on_draw = on_draw
 
+    # Define the screenshot method
+    capture_index = 0
+
+    def capture():
+        nonlocal capture_index
+        capture_index += 1
+
+        pg.image.get_buffer_manager().get_color_buffer().save("navigation_" + str(capture_index) + ".png")
+
     # Decide whether we are doing manual or agent control
     if manual:
         def on_key_press(symbol, modifier):
@@ -103,12 +112,16 @@ def visualize(env, task, manual=True):
                 env.update(Action.RIGHT)
             elif pg.window.key.SPACE == symbol:
                 env.reset()
+            elif pg.window.key.ENTER == symbol:
+                capture()
 
         window.on_key_press = on_key_press
     else:
         def on_key_press(symbol, modifier):
             if pg.window.key.SPACE == symbol:
                 env.reset()
+            elif pg.window.key.ENTER == symbol:
+                capture()
 
         window.on_key_press = on_key_press
 

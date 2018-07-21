@@ -70,7 +70,7 @@ def visualize(env, task, manual=True, sensor=False):
                 env.update(acceleration, steering, dt)
             else:
                 acc, steer = env.expert()
-                env.update(acc, steer)
+                env.update(acc, steer, dt)
 
             if env.complete:
                 is_paused = True
@@ -134,6 +134,15 @@ def visualize(env, task, manual=True, sensor=False):
 
     window.on_draw = on_draw
 
+    # Define the screenshot method
+    capture_index = 0
+
+    def capture():
+        nonlocal capture_index
+        capture_index += 1
+
+        pg.image.get_buffer_manager().get_color_buffer().save("driving_" + str(capture_index) + ".png")
+
     # Define key handler
     def on_key_press(symbol, modifier):
         nonlocal is_paused, steering, acceleration
@@ -155,6 +164,8 @@ def visualize(env, task, manual=True, sensor=False):
             acceleration = 0.0
             steering = 0.0
             is_paused = False
+        elif pg.window.key.ENTER == symbol:
+            capture()
 
     window.on_key_press = on_key_press
 

@@ -27,24 +27,24 @@ def one_room():
 
     # Define tasks
 
-    class Right(Task):
+    class Top(Task):
         def __init__(self):
-            Task.__init__(self, 24, 12, 2, 2)
+            Task.__init__(self, 12, 0, 2, 2)
 
         def reset(self):
-            return 0, 12
+            return 12, 25
 
-    class Left(Task):
+    class Bottom(Task):
         def __init__(self):
-            Task.__init__(self, 0, 12, 2, 2)
+            Task.__init__(self, 12, 24, 2, 2)
 
         def reset(self):
-            return 25, 12
+            return 12, 0
 
-    env.add_task(Right(), 'right')
-    env.add_task(Left(), 'left')
+    env.add_task(Top(), 'top')
+    env.add_task(Bottom(), 'bottom')
 
-    env.set_task('right')
+    env.set_task('top')
     env.reset()
 
     return env

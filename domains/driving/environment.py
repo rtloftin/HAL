@@ -158,7 +158,7 @@ class Environment:
         :return: the acceleration and steering for the current state
         """
 
-        return 0.0, 0.0
+        return self._task.expert(self)
 
     @property
     def width(self):

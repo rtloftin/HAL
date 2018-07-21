@@ -1,11 +1,15 @@
-import gym, roboschool
+import gym
+import roboschool
 import numpy as np
+
 
 def relu(x):
     return np.maximum(x, 0)
 
-class SmallReactivePolicy:
-    "Simple multi-layer perceptron policy, no internal state"
+
+class Policy:
+    """Simple multi-layer perceptron policy, no internal state"""
+
     def __init__(self, observation_space, action_space):
         assert weights_dense1_w.shape == (observation_space.shape[0], 64.0)
         assert weights_dense2_w.shape == (64.0, 32.0)
@@ -18,7 +22,8 @@ class SmallReactivePolicy:
         x = np.dot(x, weights_final_w) + weights_final_b
         return x
 
-def demo_run():
+
+def run_demo():
     env = gym.make("RoboschoolInvertedPendulumSwingup-v1")
     pi = SmallReactivePolicy(env.observation_space, env.action_space)
 
@@ -44,6 +49,7 @@ def demo_run():
                 restart_delay -= 1
                 if restart_delay > 0: continue
                 break
+
 
 weights_dense1_w = np.array([
 [ +0.5877, -0.5825, -0.5542, -0.2557, -0.4485, +1.4126, +0.2701, -0.6204, -0.2580, +0.2106, -0.2296, +0.7949, +0.6224, -0.0186, +0.4216, +1.0924, -0.1538, -0.2818, +0.4855, -0.2496, +0.7461, -0.6156, +0.0801, +0.7871, -0.4312, -0.9585, +0.1566, -0.2218, -1.0393, +0.6104, -0.5339, +0.8258, +0.4064, +0.0503, +0.4753, -0.8161, +0.0812, +0.2311, -0.9492, -1.1791, +1.2375, +0.2916, +1.2290, +0.2796, -0.8864, -1.1424, -0.5714, +0.1413, +0.7340, -0.4152, +0.2832, -0.3886, +0.4810, -0.7092, -0.5966, +0.1089, +0.1007, +0.5226, -0.3343, +0.1760, +0.4099, -0.9913, -1.1694, -1.0018],
