@@ -23,7 +23,7 @@ def intersection(npc=True):
     """
 
     # Initialize environment
-    env = Environment(20, 20, 5, 40)
+    env = Environment(20, 20, 5, 20)
 
     env.add_wall(8, 0, 8, 6)
     env.add_wall(12, 0, 12, 6)

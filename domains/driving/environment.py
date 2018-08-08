@@ -119,6 +119,9 @@ class Environment:
         task defines how the environment will be initialized.
         """
 
+        self._complete = False
+        self._reward = 0.0
+
         self._car, self._cars = self._task.reset()
 
         self._sensor = Sensor(self._car, self._cars, self._walls, self._radius, self._resolution)

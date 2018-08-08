@@ -23,7 +23,7 @@ def highway(npc=True):
     """
 
     # Initialize environment
-    env = Environment(20.0, 20.0, 5.0, 20)
+    env = Environment(20.0, 20.0, 10.0, 20)
 
     env.add_wall(6.0, 0.0, 6.0, 20.0)
     env.add_wall(12.0, 0.0, 12.0, 12.0)
@@ -107,10 +107,10 @@ def highway(npc=True):
             steering = 0.0
 
             if env.y >= 8.0:
-                if 8.0 <= env.x and -0.5 <= env.direction:
-                    steering = -0.1
+                if 8.0 <= env.x and 0.5 >= env.direction:
+                    steering = -0.08
                 elif 8.0 >= env.x and 0.0 < env.direction:
-                    steering = 0.1
+                    steering = 0.08
 
             # Acceleration
             time = 0.0
@@ -119,7 +119,7 @@ def highway(npc=True):
                 if car.x <= 8.0 and car.y <= 12.0:
                     time = max(time, (12.0 - car.y) / car.speed)
 
-            return acceleration(env, time, 8.0), steering
+            return acceleration(env, time, 9.0), steering
 
     class Right(Task):
         def __init__(self):
@@ -135,9 +135,9 @@ def highway(npc=True):
 
             if env.y >= 8.0:
                 if 10.0 >= env.x and -0.5 <= env.direction:
-                    steering = 0.1
-                elif 10.0 <= env.x and 0.0 < env.direction:
-                    steering = -0.1
+                    steering = 0.08
+                elif 10.0 <= env.x and 0.0 > env.direction:
+                    steering = -0.08
 
             # Acceleration
             time = 0.0
@@ -146,7 +146,7 @@ def highway(npc=True):
                 if car.x >= 10.0 and car.y <= 12.0:
                     time = max(time, (12.0 - car.y) / car.speed)
 
-            return acceleration(env, time, 8.0), steering
+            return acceleration(env, time, 9.0), steering
 
     env.add_task(Exit(), "exit")
     env.add_task(Left(), "left")
