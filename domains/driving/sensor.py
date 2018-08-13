@@ -147,6 +147,8 @@ class Sensor:
             for wall in self._walls:
                 dist = min(dist, segment(x, y, start, end, self._radius, wall.x0, wall.y0, wall.x1, wall.y1))
 
+
+
             # Update sensor vector
             self.vector[index] = dist
 

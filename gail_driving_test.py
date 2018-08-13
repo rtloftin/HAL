@@ -1,10 +1,6 @@
 """
-This scripts runs behavioral cloning on
+This scripts runs the GAIL algorithm on
 the driving domain, and evaluates the results.
-
-Here we use regression rather than classification
-for action selection, since the driving controllers
-are not themselves discretized.
 """
 
 import domains.driving as dr

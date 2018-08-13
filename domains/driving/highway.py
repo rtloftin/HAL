@@ -23,7 +23,7 @@ def highway(npc=True):
     """
 
     # Initialize environment
-    env = Environment(20.0, 20.0, 10.0, 20)
+    env = Environment(20.0, 20.0, 20.0, 12)
 
     env.add_wall(6.0, 0.0, 6.0, 20.0)
     env.add_wall(12.0, 0.0, 12.0, 12.0)
@@ -64,7 +64,7 @@ def highway(npc=True):
         if 0.0 >= time:
             return 0.1
 
-        return 2 * ((position - env.y) / (time * time) - env.speed / time)
+        return min(0.1, max(-0.1, 2 * ((position - env.y) / (time * time) - env.speed / time)))
 
     class Exit(Task):
 

@@ -80,7 +80,7 @@ def intersection(npc=True):
         if 0.0 == t:
             return 0.1
 
-        return 2 * ((7.0 - env.y) / (t * t) - env.speed / t)
+        return min(0.1, max(-0.1, 2 * ((7.0 - env.y) / (t * t) - env.speed / t)))
 
     class Straight(Task):
 
