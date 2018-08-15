@@ -14,7 +14,11 @@ env.set_task("exit")
 # Generate data set
 training_episodes = 10
 time_step = 0.05
-data = []
+
+teacher_sensors = []
+teacher_speeds = []
+teacher_accelerations = []
+teacher_steerings = []
 
 for _ in range(training_episodes):
     env.reset()
@@ -25,175 +29,187 @@ for _ in range(training_episodes):
         acceleration, steering = env.expert()
 
         # Add training data
-        data.append({
-            'sensor': np.copy(env.sensor),
-            'speed': env.speed,
-            'x': env.x,
-            'y': env.y,
-            'direction': env.direction,
-            'acceleration': acceleration,
-            'steering': steering
-        })
-
-        # print(str(env.sensor))
+        teacher_sensors.append(np.copy(env.sensor))
+        teacher_speeds.append([env.speed])
+        teacher_accelerations.append([acceleration])
+        teacher_steerings.append([steering])
 
         # Update environment
         env.update(acceleration, steering, time_step)
 
-print("training samples: " + str(len(data)))
+print("training samples: " + str(len(teacher_sensors)))
 
-# Initialize behavior model - basic mlp regression for now
+# Build actor and discriminator models
 sess = tf.Session()
 
-input_size = env.sensor.size + 1
-# input_size = env.sensor.size + 4
-# input_size = 4
+# Discriminator
+discriminator_hidden_nodes = 100
+discriminator_hidden_layers = 2
 
-print("input size: " + str(input_size))
+discriminator_input_weights = tf.Variable(
+    tf.random_normal([env.sensor.size + 3, discriminator_hidden_nodes], stddev=0.5))
+discriminator_input_biases = tf.Variable(tf.zeros([discriminator_hidden_nodes]))
+discriminator_output_weights = tf.Variable(tf.random_normal([discriminator_hidden_nodes, 1], stddev=0.5))
+discriminator_output_bias = tf.Variable(tf.zeros([1]))
 
-output_size = 2
-hidden_layers = 2
-hidden_nodes = 200
+discriminator_weights = []
+discriminator_biases = []
 
-input_weights = tf.Variable(tf.random_normal([input_size, hidden_nodes], stddev=0.5))
-input_biases = tf.Variable(tf.zeros([hidden_nodes]))
-output_weights = tf.Variable(tf.random_normal([hidden_nodes, output_size], stddev=0.05))
-output_bias = tf.Variable(tf.zeros([output_size]))
+for _ in range(discriminator_hidden_layers - 1):
+    discriminator_weights.append(
+        tf.Variable(tf.random_normal([discriminator_hidden_nodes, discriminator_hidden_nodes], stddev=0.5)))
+    discriminator_biases.append(tf.Variable(tf.zeros([discriminator_hidden_nodes])))
 
-weights = []
-biases = []
+# Agent path
+agent_sensor = tf.placeholder(tf.float32, [None, env.sensor.size])
+agent_speed = tf.placeholder(tf.float32, [None, 1])
+agent_acceleration = tf.placeholder(tf.float32, [None, 1])
+agent_steering = tf.placeholder(tf.float32, [None, 1])
+agent_input = tf.concat([agent_speed, agent_acceleration, agent_steering, agent_sensor], 1)
 
-for _ in range(hidden_layers - 1):
-    weights.append(tf.Variable(tf.random_normal([hidden_nodes, hidden_nodes], stddev=0.5)))
-    biases.append(tf.Variable(tf.zeros([hidden_nodes])))
+layer = tf.nn.relu(tf.add(tf.matmul(agent_input, discriminator_input_weights), discriminator_input_biases))
 
-sensor_input = tf.placeholder(tf.float32, [None, env.sensor.size], "sensor")
-speed_input = tf.placeholder(tf.float32, [None, 1], "speed")
-x_input = tf.placeholder(tf.float32, [None, 1], "x")
-y_input = tf.placeholder(tf.float32, [None, 1], "y")
-direction_input = tf.placeholder(tf.float32, [None, 1], "direction")
+for index in range(discriminator_hidden_layers - 1):
+    layer = tf.nn.relu(tf.add(tf.matmul(layer, discriminator_weights[index]), discriminator_biases[index]))
 
-target_acceleration = tf.placeholder(tf.float32, [None, 1], "acceleration")
-target_steering = tf.placeholder(tf.float32, [None, 1], "steering")
+agent_output = tf.add(tf.matmul(layer, discriminator_output_weights), discriminator_output_bias)
+agent_loss = tf.log_sigmoid(agent_output)
 
-inpt = tf.concat([speed_input, sensor_input], 1)
-# inpt = tf.concat([speed_input, x_input, y_input, direction_input, sensor_input], 1)
-# inpt = tf.concat([speed_input, x_input, y_input, direction_input], 1)
-layer = tf.nn.relu(tf.add(tf.matmul(inpt, input_weights), input_biases))
+# Teacher path
+teacher_sensor = tf.placeholder(tf.float32, [None, env.sensor.size])
+teacher_speed = tf.placeholder(tf.float32, [None, 1])
+teacher_acceleration = tf.placeholder(tf.float32, [None, 1])
+teacher_steering = tf.placeholder(tf.float32, [None, 1])
+teacher_input = tf.concat([teacher_speed, teacher_acceleration, teacher_steering, teacher_sensor], 1)
 
-for index in range(hidden_layers - 1):
-    layer = tf.nn.relu(tf.add(tf.matmul(layer, weights[index]), biases[index]))
+layer = tf.nn.relu(tf.add(tf.matmul(teacher_input, discriminator_input_weights), discriminator_input_biases))
 
-output = tf.add(tf.matmul(layer, output_weights), output_bias)
-agent_acceleration = tf.slice(output, [0, 0], [-1, 1])
-agent_steering = tf.slice(output, [0, 1], [-1, 1])
+for index in range(discriminator_hidden_layers - 1):
+    layer = tf.nn.relu(tf.add(tf.matmul(layer, discriminator_weights[index]), discriminator_biases[index]))
 
-# Debug variables
-accel = tf.reduce_mean(agent_acceleration)
-steer = tf.reduce_mean(agent_steering)
+teacher_output = tf.add(tf.matmul(layer, discriminator_output_weights), discriminator_output_bias)
 
-taccel = tf.reduce_mean(target_acceleration)
-tsteer = tf.reduce_mean(target_steering)
+# Loss and update
+discriminator_loss = tf.reduce_mean(tf.log_sigmoid(teacher_output)) + tf.reduce_mean(tf.log_sigmoid(-agent_output))
+discriminator_update = tf.train.AdamOptimizer(learning_rate=0.001).minimize(discriminator_loss)
 
-maccel = tf.reduce_max(tf.abs(target_acceleration))
-msteer = tf.reduce_max(tf.abs(target_steering))
+# Actor
+actor_hidden_nodes = 100
+actor_hidden_layers = 2
 
-errors = tf.square(agent_acceleration - target_acceleration) + tf.square(agent_steering - target_steering)
-max_loss = tf.reduce_max(errors)
-loss = tf.reduce_mean(errors)
+actor_input_weights = tf.Variable(
+    tf.random_normal([env.sensor.size + 1, actor_hidden_nodes], stddev=0.5))
+actor_input_biases = tf.Variable(tf.zeros([actor_hidden_nodes]))
+actor_output_weights = tf.Variable(tf.random_normal([actor_hidden_nodes, 1], stddev=0.5))
+actor_output_bias = tf.Variable(tf.zeros([4]))
 
-update = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(loss)
+actor_weights = []
+actor_biases = []
 
-# Train behavior model
+for _ in range(actor_hidden_layers - 1):
+    actor_weights.append(tf.Variable(tf.random_normal([actor_hidden_nodes, actor_hidden_nodes], stddev=0.5)))
+    actor_biases.append(tf.Variable(tf.zeros([actor_hidden_nodes])))
 
-num_batches = 5000
-batch_size = 5000
+sensor_input = tf.placeholder(tf.float32, [None, env.sensor.size])
+speed_input = tf.placeholder(tf.float32, [None, 1])
+state_input = tf.concat([speed_input, sensor_input], 1)
+
+acceleration = tf.placeholder(tf.float32, [None, 1])
+steering = tf.placeholder(tf.float32, [None, 1])
+advantage = tf.placeholder(tf.float32, [None, 1])
+
+layer = tf.nn.relu(tf.add(tf.matmul(state_input, actor_input_weights), actor_input_biases))
+
+for index in range(actor_hidden_layers - 1):
+    layer = tf.nn.relu(tf.add(tf.matmul(layer, actor_weights[index]), actor_biases[index]))
+
+actor_output = tf.add(tf.matmul(layer, actor_output_weights), actor_output_bias)
+acceleration_mean = tf.slice(actor_output, [0, 0], [-1, 1])
+acceleration_variance = tf.slice(actor_output, [0, 0], [-1, 1])
+steering_mean = tf.slice(actor_output, [0, 0], [-1, 1])
+steering_variance = tf.slice(actor_output, [0, 0], [-1, 1])
+
+acceleration_output = (acceleration_mean +
+                       tf.sqrt(acceleration_variance) * tf.random_normal(tf.shape(acceleration_mean), mean=0, stddev=0.5))
+steering_output = (steering_mean + tf.sqrt(steering_variance) * tf.random_normal(tf.shape(steering_mean), mean=0, stddev=0.5))
+
+actor_probability = ((tf.square(acceleration - acceleration_mean) / acceleration_variance)
+                     + (tf.square(steering - steering_mean) / steering_variance))
+actor_ratio = tf.exp(tf.stop_gradient(actor_probability) - actor_probability)
+actor_loss = tf.reduce_mean(tf.minimum(actor_ratio * advantage, tf.clip_by_value(actor_ratio, 0.8, 1.2) * advantage))
+actor_update = tf.train.AdamOptimizer(learning_rate=0.001).minimize(actor_loss)
+
+# Run GAIL algorithm
+
+num_episodes = 5000
+max_steps = 500
+total_successes = 0
 
 sess.run(tf.global_variables_initializer())
 
-# print("initial parameters")
-# print("input weights: " + str(sess.run(input_weights)))
-# print("output weights: " + str(sess.run(output_weights)))
+for episode in range(num_episodes):
+    actor_sensors = []
+    actor_speeds = []
+    actor_accelerations = []
+    actor_steerings = []
 
-for index in range(num_batches):
-    batch = np.random.choice(data, batch_size)
-
-    sensor_batch = []
-    speed_batch = []
-    acceleration_batch = []
-    steering_batch = []
-    x_batch = []
-    y_batch = []
-    direction_batch = []
-
-    for sample in batch:
-        sensor_batch.append(sample['sensor'])
-        speed_batch.append([sample['speed']])
-        acceleration_batch.append([sample['acceleration']])
-        steering_batch.append([sample['steering']])
-        x_batch.append([sample['x']])
-        y_batch.append([sample['y']])
-        direction_batch.append([sample['direction']])
-
-    status = sess.run([loss, accel, steer, taccel, tsteer, max_loss, maccel, msteer], feed_dict={
-        sensor_input: sensor_batch,
-        speed_input: speed_batch,
-        x_input: x_batch,
-        y_input: y_batch,
-        direction_input: direction_batch,
-        target_acceleration: acceleration_batch,
-        target_steering: steering_batch
-    })
-
-    print('Batch ' + str(index) + ", loss: " + str(status[0]))
-    # print("Maximum error: " + str(status[5]))
-    # print('Mean acceleration: ' + str(status[1]) + ', Mean steering: ' + str(status[2]))
-    # print('Target acceleration: ' + str(status[3]) + ', Target steering: ' + str(status[4]))
-    # print('Max acceleration: ' + str(status[6]) + ', Max steering: ' + str(status[7]))
-
-    sess.run(update, feed_dict={
-        sensor_input: sensor_batch,
-        speed_input: speed_batch,
-        x_input: x_batch,
-        y_input: y_batch,
-        direction_input: direction_batch,
-        target_acceleration: acceleration_batch,
-        target_steering: steering_batch
-    })
-
-# print("final parameters")
-# print("input weights: " + str(sess.run(input_weights)))
-# print("output weights: " + str(sess.run(output_weights)))
-
-# Test behavior -- need to impose a
-max_steps = 500
-evaluation_episodes = 50
-
-total_successes = 0.0
-
-for episode in range(evaluation_episodes):
     env.reset()
     steps = 0
 
-    print("Episode: " + str(episode))
-
+    # run episode
     while steps < max_steps and not env.complete:
         steps += 1
 
-        acceleration, steering = sess.run([agent_acceleration, agent_steering], feed_dict={
+        acc, steer = sess.run([acceleration_output, steering_output], feed_dict={
             sensor_input: [env.sensor],
             speed_input: [[env.speed]],
-            x_input: [[env.x]],
-            y_input: [[env.y]],
-            direction_input: [[env.direction]],
         })
 
-        # print('Acceleration: ' + str(acceleration))
-        # print('Steering: ' + str(steering))
+        actor_sensors.append(np.copy(env.sensor))
+        actor_speeds.append([env.speed])
+        actor_accelerations.append([acc[0, 0]])
+        actor_steerings.append([steer[0, 0]])
 
-        env.update(acceleration[0, 0], steering[0, 0], time_step)
+        env.update(acc[0, 0], steer[0, 0], time_step)
 
+    # print success rate
     if 0.0 < env.reward:
         total_successes += 1.0
 
-print('Success rate: ' + str(100 * (total_successes / evaluation_episodes)))
+    print("episode " + str(episode) + ", success rate: " + str(100 * total_successes / (episode + 1)) + "%")
+
+    # compute advantages
+    value = 0
+    advantages = [0] * len(actor_sensors)
+
+    for step in range(len(actor_sensors) - 1, -1, -1):
+        advantages[step] = [value]
+
+        adv = sess.run(agent_loss, feed_dict={
+            agent_sensor: [actor_sensors[step]],
+            agent_speed: [actor_speeds[step]],
+            agent_acceleration: [actor_accelerations[step]],
+            agent_steering: [actor_steerings[step]]
+        })
+
+        value += adv[0, 0]
+
+    # perform updates
+    sess.run(discriminator_update, feed_dict={
+        teacher_sensor: teacher_sensors,
+        teacher_speed: teacher_speeds,
+        teacher_acceleration: teacher_accelerations,
+        teacher_steering: teacher_steerings,
+        agent_sensor: actor_sensors,
+        agent_speed: actor_speeds,
+        agent_acceleration: actor_accelerations,
+        agent_steering: actor_steerings
+    })
+
+    sess.run(actor_update, feed_dict={
+        sensor_input: actor_sensors,
+        speed_input: actor_speeds,
+        acceleration: actor_accelerations,
+        steering: actor_steerings,
+        advantage: advantages
+    })
