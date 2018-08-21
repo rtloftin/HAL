@@ -1,14 +1,13 @@
 import tensorflow as tf
 import numpy as np
 
-x = tf.constant([[1, 1, 1]], dtype=tf.float32)
-y = tf.constant([[1, 1, 1]], dtype=tf.float32)
-
-concat = tf.concat([x, y], 1)
-sum = tf.reduce_sum(concat)
-
 sess = tf.Session()
 
-total = sess.run(sum)
+values = tf.placeholder(dtype=tf.float32, shape=[None])
+total = tf.reduce_sum(values)
 
-print("Sum: " + str(total))
+output = sess.run(total, feed_dict={
+    values: [1, 2, 3, 4]
+})
+
+print("Total: " + str(output))

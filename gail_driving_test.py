@@ -6,6 +6,7 @@ the driving domain, and evaluates the results.
 import domains.driving as dr
 import tensorflow as tf
 import numpy as np
+from types import SimpleNamespace
 
 # Initialize environment
 env = dr.highway(npc=False)
@@ -91,7 +92,7 @@ teacher_output = tf.add(tf.matmul(layer, discriminator_output_weights), discrimi
 
 # Loss and update
 discriminator_loss = tf.reduce_mean(tf.log_sigmoid(teacher_output)) + tf.reduce_mean(tf.log_sigmoid(-agent_output))
-discriminator_update = tf.train.AdamOptimizer(learning_rate=0.001).minimize(discriminator_loss)
+discriminator_update = tf.train.AdamOptimizer(learning_rate=0.01).minimize(discriminator_loss)
 
 # Actor
 actor_hidden_nodes = 100
@@ -137,7 +138,7 @@ actor_probability = ((tf.square(acceleration - acceleration_mean) / acceleration
                      + (tf.square(steering - steering_mean) / steering_variance))
 actor_ratio = tf.exp(tf.stop_gradient(actor_probability) - actor_probability)
 actor_loss = tf.reduce_mean(tf.minimum(actor_ratio * advantage, tf.clip_by_value(actor_ratio, 0.8, 1.2) * advantage))
-actor_update = tf.train.AdamOptimizer(learning_rate=0.001).minimize(actor_loss)
+actor_update = tf.train.AdamOptimizer(learning_rate=0.01).minimize(actor_loss)
 
 # Run GAIL algorithm
 
