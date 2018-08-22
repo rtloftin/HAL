@@ -1,6 +1,9 @@
 import gym
 
-from domains.robots import SmallReactivePolicy as PendulumAgent
+from domains.robots.RoboschoolReacher_v0 import Policy as ReacherAgent
+from domains.robots.RoboschoolHopper_v0 import Policy as HopperAgent
+from domains.robots.RoboschoolAnt_v0 import Policy as AntAgent
+from domains.robots.RoboschoolInvertedPendulumSwingup_v0 import Policy as PendulumAgent
 
 # Reacher
 # env = gym.make("RoboschoolReacher-v1")
@@ -11,16 +14,17 @@ from domains.robots import SmallReactivePolicy as PendulumAgent
 # agent = HopperAgent(env.observation_space, env.action_space)
 
 # Ant
-# env = gym.make("RoboschoolAnt-v1")
-# agent = AntAgent(env.observation_space, env.action_space)
+env = gym.make("RoboschoolAnt-v1")
+agent = AntAgent(env.observation_space, env.action_space)
 
 # Pendulum
-env = gym.make("RoboschoolInvertedPendulumSwingup-v1")
-agent = PendulumAgent(env.observation_space, env.action_space)
+# env = gym.make("RoboschoolInvertedPendulumSwingup-v1")
+# agent = PendulumAgent(env.observation_space, env.action_space)
 
-num_episodes = 100;
+num_episodes = 100
+total_reward = 0
 
-for _ in range(num_episodes):
+for episode in range(num_episodes):
     state = env.reset()
     done = False
     step = 0
@@ -34,9 +38,14 @@ for _ in range(num_episodes):
         step += 1
         total += reward
 
-print("Total reward, agent: ", (total / num_episodes))
+    total_reward += total
+    print("Episode " + str(episode + 1) + ", " + str(step) + " steps, return: " + str(total))
 
-for _ in range(num_episodes):
+print("Total reward, agent: ", (total_reward / num_episodes))
+
+total_reward = 0
+
+for episode in range(num_episodes):
     state = env.reset()
     done = False
     step = 0
@@ -48,5 +57,7 @@ for _ in range(num_episodes):
         step += 1
         total += reward
 
-print("Total reward, random: ", (total / num_episodes))
+    total_reward += total
+    print("Episode " + str(episode + 1) + ", " + str(step) + " steps, return: " + str(total))
 
+print("Total reward, random: ", (total_reward / num_episodes))
