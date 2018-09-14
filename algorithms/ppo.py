@@ -127,7 +127,7 @@ class Agent:
 
             # Action space is continuous, so we have a mean and a deviation
             policy_mean = policy_output[0]
-            policy_deviation = tf.exp(policy_output[1])
+            policy_deviation = policy_output[1]
 
             hypothesis_mean = hypothesis_output[0]
             hypothesis_deviation = tf.exp(hypothesis_output[1])
@@ -300,11 +300,11 @@ class Factory:
 
     def __init__(self,
                  model_source,
-                 discount=0.95,
-                 learning_rate=0.001,
-                 clip_epsilon=0.2,
-                 batch_size=1,
-                 num_batches=50):
+                 discount=0.99,
+                 learning_rate=0.0005,
+                 clip_epsilon=0.05,
+                 batch_size=5,
+                 num_batches=10):
         """
         Initializes the factory.
 
@@ -341,12 +341,13 @@ def roboschool_test():
     """
 
     # Initialize environment
+    # env = gym.make("RoboschoolAnt-v1")
     env = gym.make("RoboschoolHopper-v1")
 
     # Define model structure
-    def ant_network():
+    def network():
 
-        hidden_nodes = 100
+        hidden_nodes = 70
         hidden_layers = 2
 
         state_size = env.observation_space.shape[0]
@@ -366,11 +367,11 @@ def roboschool_test():
             hidden_weights.append(tf.Variable(tf.random_normal([hidden_nodes, hidden_nodes], mean=0.0, stddev=0.5)))
             hidden_biases.append(tf.Variable(tf.zeros([hidden_nodes])))
 
-        output_mean_weights = tf.Variable(tf.random_normal([hidden_nodes, action_size], mean=0.0, stddev=0.005))
+        output_mean_weights = tf.Variable(tf.random_normal([hidden_nodes, action_size], mean=0.0, stddev=0.01))
         output_mean_bias = tf.Variable(tf.zeros([action_size]))
 
-        output_deviation_weights = tf.Variable(tf.random_normal([hidden_nodes, action_size], mean=0.0, stddev=0.002))
-        output_deviation_bias = tf.Variable(tf.random_normal([action_size], mean=-1.0, stddev=0.2))
+        output_deviation_weights = tf.Variable(tf.random_normal([hidden_nodes, action_size], mean=0.0, stddev=0.001))
+        output_deviation_bias = tf.Variable(tf.constant(0.5, dtype=tf.float32, shape=[action_size]))
 
         variables = {
             "input_weights": input_weights,
@@ -386,24 +387,25 @@ def roboschool_test():
             variables["hidden_biases_" + str(index)] = hidden_biases[index]
 
         # Define network structure
-        layer = tf.nn.sigmoid(tf.add(tf.matmul(state_inputs["state"], input_weights), input_bias))
+        layer = tf.nn.tanh(tf.add(tf.matmul(state_inputs["state"], input_weights), input_bias))
 
         for index in range(hidden_layers - 1):
-            layer = tf.nn.sigmoid(tf.add(tf.matmul(layer, hidden_weights[index]), hidden_biases[index]))
+            layer = tf.nn.tanh(tf.add(tf.matmul(layer, hidden_weights[index]), hidden_biases[index]))
 
         output_mean = tf.add(tf.matmul(layer, output_mean_weights), output_mean_bias)
-        output_deviation = tf.add(tf.matmul(layer, output_deviation_weights), output_deviation_bias)
+        # output_deviation = tf.exp(tf.add(tf.matmul(layer, output_deviation_weights), output_deviation_bias))
+        output_deviation = tf.square(output_deviation_bias) + tf.constant(0.01, dtype=tf.float32, shape=[action_size])
 
         action_output = [output_mean, output_deviation]
 
         return state_inputs, action_output, variables
 
     # Initialize agent
-    agent = Factory(ant_network).build()
+    agent = Factory(network).build()
 
     # Run agent
     num_sessions = 1000
-    episodes = 4
+    episodes = 30
     max_steps = 500
 
     for session in range(num_sessions):

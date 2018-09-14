@@ -41,7 +41,7 @@ for episode in range(num_episodes):
     total_reward += total
     print("Episode " + str(episode + 1) + ", " + str(step) + " steps, return: " + str(total))
 
-print("Total reward, agent: ", (total_reward / num_episodes))
+print("Total reward, agent: " + str(total_reward / num_episodes))
 
 total_reward = 0
 
