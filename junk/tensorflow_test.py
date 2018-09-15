@@ -1,16 +1,10 @@
 import tensorflow as tf
 import numpy as np
 
-sess = tf.Session()
-
-inputs = tf.placeholder(dtype=tf.float32, shape=[None])
-x = tf.Variable(tf.zeros(shape=[None], dtype=tf.float32))
-y = tf.square(x)
+inputs = tf.placeholder(dtype=tf.float32, shape=[None, 4])
+output = tf.multinomial(inputs, 1)
 
 sess = tf.Session()
-sess.run(tf.global_variables_initializer())
-sess.run(tf.assign(x, inputs), feed_dict={inputs: [1, 2, 3, 4, 5]})
+choice = sess.run(output, feed_dict={inputs: [[1.0, 0.5, 2.0, 1.0]]})
 
-output = sess.run(y)
-
-print("Total: " + str(output))
+print("choice: " + str(choice))

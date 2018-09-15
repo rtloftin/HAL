@@ -2,7 +2,7 @@
 Defines a reinforcement learning agent which uses
 proximal policy optimization.  Also defines simple
 testing experiments for the PPO algorithm to verify
-the implementation
+the implementation.
 """
 
 import tensorflow as tf
