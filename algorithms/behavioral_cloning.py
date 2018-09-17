@@ -32,33 +32,37 @@ class TaskAgent:
         self._data = []
 
         # Construct the model
-        self._state_input = tf.placeholder(dtype=tf.float32, shape=[None, kwargs['state_size']])
-        output = kwargs['model_fn'](self._state_input, graph=graph)
+        with graph.as_default():
+            self._state_input = tf.placeholder(dtype=tf.float32, shape=[None, kwargs['state_size']])
+            output = kwargs['model_fn'](self._state_input)
 
-        # Define loss and action output
-        if self._discrete_action:
-            self._action_input = tf.placeholder(dtype=tf.int32, shape=[None])
+            # Define loss and action output
+            if self._discrete_action:
+                self._action_input = tf.placeholder(dtype=tf.int32, shape=[None])
 
-            one_hot = tf.one_hot(self._action_input, kwargs['action_size'])
-            exp = tf.exp(output)
+                one_hot = tf.one_hot(self._action_input, kwargs['action_size'])
+                exp = tf.exp(output)
 
-            loss = tf.log(tf.reduce_sum(exp)) - tf.reduce_sum(one_hot * output)
-            self._action = tf.multinomial(output, 1)
-        else:
-            self._action_input = tf.placeholder(dtype=tf.float32, shape=[None, kwargs['action_size']])
+                loss = tf.reduce_sum(tf.log(tf.reduce_sum(exp, axis=1)) - (one_hot * output))
+                self._action = tf.multinomial(output, 1)
+            else:
+                self._action_input = tf.placeholder(dtype=tf.float32, shape=[None, kwargs['action_size']])
 
-            action_mean, action_deviation = tf.split(output, 2, axis=1)
+                action_mean, action_deviation = tf.split(output, 2, axis=1)
+                action_deviation = tf.exp(tf.multiply(action_deviation, 0.5))
 
-            loss = tf.reduce_sum(tf.square(self._action_input - action_mean) * tf.exp(-action_deviation))
-            self._action = action_mean + tf.random_normal(f.shape(action_mean)) * tf.exp(action_deviation / 2.0)
+                loss = tf.reduce_sum(tf.square((self._action_input - action_mean) / action_deviation))
 
-        # Define policy update
-        self._update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
+                noise = tf.random_normal(tf.shape(action_mean))
+                self._action = action_mean + (noise * action_deviation)
 
-        # Initialize model
-        self._session.run(tf.global_variables_initializer())
+            # Define policy update
+            self._update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
 
-    def step(self, state, action):
+            # Initialize model
+            self._session.run(tf.global_variables_initializer())
+
+    def demonstrate(self, state, action):
         """
         Adds a new state-action pair to the data set.
 
@@ -66,7 +70,7 @@ class TaskAgent:
         :param action: the action taken in that state
         """
 
-        data.append((state, action))
+        self._data.append((state, action))
 
     def act(self, state):
         """
@@ -76,7 +80,7 @@ class TaskAgent:
         :return: the sampled action
         """
 
-        action = self._session.run(action, feed_dict={self._state_input: state})
+        action = self._session.run(action, feed_dict={self._state_input: [state]})
 
         if self._discrete_action:
             return action[0, 0]
@@ -91,7 +95,7 @@ class TaskAgent:
         for _ in range(self._num_batches):
             batch = np.random.choice(self._data, size=self._batch_size)
             states = []
-            action = []
+            actions = []
 
             for sample in batch:
                 states.append(sample[0])
@@ -158,7 +162,7 @@ class Agent:
         :param action:  the teacher's action
         """
 
-        self._current.step(state, action)
+        self._current.demonstrate(state, action)
 
     def act(self, state):
         """
@@ -172,7 +176,22 @@ class Agent:
 
 
 def factory(model_fn, state_size, action_size,
-            discrete_action=False, learning_rate=0.01, batch_size=10, num_batches=1000):
+            discrete_action=False,
+            learning_rate=0.01,
+            batch_size=10,
+            num_batches=1000):
+    """
+    Gets a method which constructs new multi-task behavioral cloning agents.
+
+    :param model_fn: the function used to build the model graph
+    :param state_size: the number of state features
+    :param action_size: the number of actions or action features
+    :param discrete_action: whether or not the actions are discrete
+    :param learning_rate: the learning rate used for training the policies
+    :param batch_size: the batch size used for training the policies
+    :param num_batches: the number of batches used for training the policies
+    :return: a new behavioral cloning agent
+    """
     kwargs = {
         'model_fn': model_fn,
         'state_size': state_size,

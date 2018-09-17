@@ -11,26 +11,6 @@ import gym
 import roboschool
 
 
-class Step:
-    """
-    Represents a single step in a state-action trajectory.
-    """
-
-    def __init__(self, state, action):
-        """
-        Creates the step object.
-
-        :param state: the initial state
-        :param action: the action taken
-        :param reward: the immediate reward received
-        """
-
-        self.state = state
-        self.action = action
-        self.reward = 0.0
-        self.advantage = 0.0
-
-
 class Trajectory:
     """
     Represents a state action trajectory
@@ -39,46 +19,33 @@ class Trajectory:
     def __init__(self):
         self.steps = []
 
-    def append(self, state, action):
+    def append(self, state, action, reward):
         """
-        Adds a new state action pair to the trajectory
+        Adds a new step to the trajectory.
 
         :param state: the state
         :param action: the action
+        :param reward: the immediate reward received
         """
 
-        self.steps.append(Step(state, action))
+        self.steps.append((state, action, reward))
 
-    def reward(self, reward):
-        """
-        Sets the immediate reward for the most recent time step.
-
-        :param reward: the immediate reward
-        """
-
-        self.steps[-1].reward = reward
-
-    def accumulate(self, gamma):
+    def accumulate(self, discount):
         """
         Calculates the advantage value for each time step.
 
-        :param gamma: the discount factor
+        :param discount: the discount factor
+        :return: a list of tuples of (state, action, advantage)
         """
 
+        samples = []
         advantage = 0
 
         for step in reversed(self.steps):
-            advantage = step.reward + (gamma * advantage)
-            step.advantage = advantage
+            advantage = step.reward + (discount * advantage)
+            samples.append((step.state, step.action, advantage))
 
-    def random(self):
-        """
-        Samples a random time-step from this trajectory.
-
-        :return: an object representing the time step
-        """
-
-        return self.steps[np.random.randint(0, len(self.steps))]
+        return samples
 
 
 class Agent:
@@ -87,180 +54,148 @@ class Agent:
     using a version of the PPO algorithm.
     """
 
-    def __init__(self, config):
+    def __init__(self, kwargs):
         """
         Initializes a new PPO agent.
 
-        :param config: an object containing the settings for this agent.
+        :param kwargs: the configuration options for the agent
         """
 
-        # Define policy network
-        policy_inputs, policy_output, policy_variables = config.model_source()
+        # Capture the configuration parameters needed
+        self._discrete_action = kwargs['discrete_action']
+        self._discount = kwargs['discount']
+        self._batch_size = kwargs['batch_size']
+        self._num_batches = kwargs['num_batches']
+        self._num_episodes = kwargs['num_episodes']
 
-        # Define hypothesis network
-        hypothesis_inputs, hypothesis_output, hypothesis_variables = config.model_source()
+        # Create graph and session
+        self._graph = tf.Graph()
+        self._session = tf.Session(graph=self._graph)
 
-        # Determine if output is discrete our continuous
-        self._discrete_action = not isinstance(policy_output, list)
+        # Build the policy network and learning update graph
+        with self._graph.as_default():
+            self._state_input = tf.placeholder(dtype=tf.float32, shape=[None, kwargs['state_size']])
 
-        # Configure for discrete or continuous actions
-        if self._discrete_action:
+            with tf.variable_scope("policy"):
+                policy_output = kwargs['model_fn'](self._state_input)
 
-            # Define action input
-            action_input = tf.placeholder(dtype=tf.int32, shape=[None], name="action_input")
+            with tf.variable_scope("hypothesis"):
+                hypothesis_output = kwargs['model_fn'](self._state_input)
 
-            # Define action output
-            action_output = tf.multinomial(policy_output, 1)
+            if self._discrete_action:
+                self._action_input = tf.placeholder(dtype=tf.int32, shape=[None])
 
-            # Define likelihood ratio
-            one_hot = tf.one_hot(action_input, policy_output.shape[1])
+                one_hot = tf.one_hot(action_input, kwargs['action_size'])
 
-            policy = tf.exp(policy_output)
-            policy = tf.reduce_sum(one_hot * policy, 1) / tf.reduce_sum(policy, 1)
+                policy = tf.exp(policy_output)
+                policy = tf.reduce_sum(one_hot * policy, 1) / tf.reduce_sum(policy, 1)
 
-            hypothesis = tf.exp(hypothesis_output)
-            hypothesis = tf.reduce_sum(one_hot * hypothesis, 1) / tf.reduce_sum(hypothesis, 1)
+                hypothesis = tf.exp(hypothesis_output)
+                hypothesis = tf.reduce_sum(one_hot * hypothesis, 1) / tf.reduce_sum(hypothesis, 1)
 
-            ratio = hypothesis / tf.stop_gradient(policy)
+                ratio = hypothesis / tf.stop_gradient(policy)
 
-        else:
+                self._action_output = tf.multinomial(policy_output, 1)
+            else:
+                self._action_input = tf.placeholder(dtype=tf.float32, shape=kwargs['action_size'])
 
-            # Action space is continuous, so we have a mean and a deviation
-            policy_mean = policy_output[0]
-            policy_deviation = policy_output[1]
+                policy_mean, policy_deviation = tf.split(policy_output, 2, axis=1)
+                hypothesis_mean, hypothesis_deviation = tf.split(hypothesis_output, 2, axis=1)
 
-            hypothesis_mean = hypothesis_output[0]
-            hypothesis_deviation = tf.exp(hypothesis_output[1])
+                policy = tf.square(action_input - policy_mean) / tf.exp(policy_deviation)
+                policy = tf.reduce_sum(policy + policy_deviation, axis=1)
 
-            # Define action input
-            action_input = tf.placeholder(dtype=tf.float32, shape=policy_mean.shape, name="action_input")
+                hypothesis = tf.square(action_input - hypothesis_mean) / tf.exp(hypothesis_deviation)
+                hypothesis = tf.reduce_sum(hypothesis + hypothesis_deviation, axis=1)
 
-            # Define likelihood ratio
-            policy = tf.square(action_input - policy_mean) / tf.multiply(tf.square(policy_deviation), 2.0)
-            policy = tf.reduce_sum(policy + tf.log(policy_deviation), 1)
+                ratio = tf.exp(tf.multiply(tf.stop_gradient(policy) - hypothesis, 0.5))
 
-            hypothesis = tf.square(action_input - hypothesis_mean) / tf.multiply(tf.square(hypothesis_deviation), 2.0)
-            hypothesis = tf.reduce_sum(hypothesis + tf.log(hypothesis_deviation), 1)
+                noise = tf.random_normal(tf.shape(action_mean))
+                self._action = action_mean + (noise * tf.exp(tf.multiply(action_deviation, 0.5)))
 
-            ratio = tf.exp(tf.stop_gradient(policy) - hypothesis)
+            self._advantage_input = tf.placeholder(dtype=tf.float32, shape=[None])
 
-            # Define action output
-            action_output = policy_mean + (policy_deviation * tf.random_normal(tf.shape(policy_deviation)))
+            clipped_ratio = tf.clip_by_value(ratio, 1.0 - kwargs['clip_epsilon'], 1.0 + kwargs['clip_epsilon'])
+            loss = -tf.reduce_mean(tf.minimum(ratio * advantage_input, clipped_ratio * advantage_input))
 
-        # Define action advantage input
-        advantage_input = tf.placeholder(dtype=tf.float32, shape=[None])
+            self._update_hypothesis = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
 
-        # Define clipped loss function
-        clipped_ratio = tf.clip_by_value(ratio, 1.0 - config.clip_epsilon, 1.0 + config.clip_epsilon)
-        loss = -tf.reduce_mean(tf.minimum(ratio * advantage_input, clipped_ratio * advantage_input))
+            policy_variables = dict(map(lambda x: (x.name, x), tf.trainable_variables(scope='policy')))
+            hypothesis_variables = tf.trainable_variables(scope='hypothesis')
 
-        # Define policy update
-        update_hypothesis = tf.train.AdamOptimizer(learning_rate=config.learning_rate).minimize(loss)
+            self._transfer_hypothesis = []
 
-        # Define hypothesis to policy transfer op
-        transfer_hypothesis = []
+            for var in hypothesis_variables:
+                self._transfer_hypothesis.append(tf.assign(policy_variables[var.name], var))
 
-        for key in hypothesis_variables.keys():
-            transfer_hypothesis.append(tf.assign(policy_variables[key], hypothesis_variables[key]))
+            self._sess.run(tf.global_variables_initializer())
+            self._sess.run(self._transfer_hypothesis)
 
-        # Start session
-        self._sess = tf.Session()
+        # Internal state
+        self._data = []
+        self._trajectory = None
+        self._episode_count = 0
 
-        # Initialize agent
-        self._sess.run(tf.global_variables_initializer())
-        self._sess.run(transfer_hypothesis)
-
-        # Capture required tensor references
-        self._policy_inputs = policy_inputs
-        self._hypothesis_inputs = hypothesis_inputs
-        self._action_input = action_input
-        self._action_output = action_output
-        self._advantage_input = advantage_input
-        self._transfer_hypothesis = transfer_hypothesis
-        self._update_hypothesis = update_hypothesis
-
-        # Capture configuration settings
-        self._batch_size = config.batch_size
-        self._num_batches = config.num_batches
-        self._discount = config.discount
-
-        # Initialize experience buffers
-        self._trajectories = []
-        self._current_trajectory = None
-
-        # Reset the agent so it treats input as an initial state
+        # Reset the agent so it treats the next step as an initial state
         self.reset()
 
     def update(self):
         """
         Updates the agent's policy based on recent experience.
-
-        TODO
         """
-
-        # Compute advantages
-        accumulated = []
-
-        for trajectory in self._trajectories:
-            if len(trajectory.steps) > 0:
-                trajectory.accumulate(self._discount)
-                accumulated.append(trajectory)
 
         # Perform updates
         for _ in range(self._num_batches):
 
             # Construct batch
-            trajectories = np.random.choice(accumulated, self._batch_size, replace=False)
-            batch = []
-
-            for trajectory in trajectories:
-                batch += trajectory.steps
-
-            # Construct feed dictionary
-            feed_dict = {
-                self._advantage_input: [],
-                self._action_input: []
-            }
-
-            for key in self._policy_inputs.keys():
-                feed_dict[self._policy_inputs[key]] = []
-                feed_dict[self._hypothesis_inputs[key]] = []
+            batch = np.random.choice(self._data, self._batch_size, replace=False)
+            states = []
+            actions = []
+            advantages = []
 
             for sample in batch:
-                feed_dict[self._advantage_input].append(sample.advantage)
-                feed_dict[self._action_input].append(sample.action)
-
-                for key in self._policy_inputs.keys():
-                    feed_dict[self._policy_inputs[key]].append(sample.state[key])
-                    feed_dict[self._hypothesis_inputs[key]].append(sample.state[key])
+                states.append(sample[0])
+                actions.append(sample[1])
+                advantages.append(sample[2])
 
             # Run update
-            self._sess.run(self._update_hypothesis, feed_dict=feed_dict)
+            self._sess.run(self._update_hypothesis, feed_dict={
+                self._state_input: states,
+                self._action_input: actions,
+                self._advantage_input: advantages
+            })
 
         # Transfer parameters
         self._sess.run(self._transfer_hypothesis)
 
-        # Resent for next update
-        self.clear()
-
-    def clear(self):
+    def new_episode(self):
         """
-        Clears the agent's experience data so that recent
-        experiences won't affect its policy.
+        Tells the agent that a new episode has been started, the agent may
+        choose to run an update at this time.
         """
 
-        self._trajectories = []
-        self.reset()
+        if self._trajectory is not None:
+            self._data.extend(self._trajectory.accumulate(self._discount))
 
-    def reset(self):
+        self._trajectory = Trajectory()
+        self._episode_count += 1
+
+        if self._episode_count == self._num_episodes:
+            self._update()
+            self._episode_count = 0
+
+    def observe(self, state, action, reward):
         """
-        Tells the agent that the environment has been reset.
+        Adds a step to the agent's experience
+
+        :param state: the current state
+        :param action: the action taken
+        :param reward: the reward signal for the current time step
         """
 
-        self._current_trajectory = Trajectory()
-        self._trajectories.append(self._current_trajectory)
+        self._trajectory.append(state, action, reward)
 
-    def act(self, state):
+    def get_action(self, state):
         """
         Records the current state, and selects the agent's action
 
@@ -268,76 +203,59 @@ class Agent:
         :return: a representation of the next action
         """
 
-        # Convert the state into a feed dictionary
-        feed = {}
+        action = self._sess.run(self._action_output, feed_dict={self._state_input: state})
 
-        for key in self._policy_inputs.keys():
-            feed[self._policy_inputs[key]] = [state[key]]
-
-        # Sample action from policy
-        action = self._sess.run(self._action_output, feed_dict=feed)[0]
-
-        # Extend trajectory
-        self._current_trajectory.append(state, action)
-
-        return action
-
-    def reward(self, reward):
-        """
-        Adds a reward signal to the current time step
-
-        :param reward: the reward signal for the current time step
-        """
-
-        self._current_trajectory.reward(reward)
+        if self._discrete_action:
+            return action[0, 0]
+        else:
+            return action[0]
 
 
-class Factory:
+def factory(model_fn, state_size, action_size,
+            discrete_action=False,
+            discount=0.99,
+            learning_rate=0.0005,
+            clip_epsilon=0.05,
+            batch_size=50,
+            num_batches=20,
+            num_episodes=10):
     """
-    A factory class for constructing identical
-    PPO agents.
+    Gets a method which constructs new PPO agents.
+
+    :param model_fn: the function used to build the model graph
+    :param state_size: the number of state features
+    :param action_size: the number of actions or action features
+    :param discrete_action: whether or not the actions are discrete
+    :param discount: the discount factor used to estimate advantages
+    :param learning_rate: the learning rate used for training the policies
+    :param clip_epsilon: the clipping radius for the policy ratio
+    :param batch_size: the batch size used for training the policies
+    :param num_batches: the number of gradient steps to do per update
+    :param num_episodes: the number of episodes performed between updates
+    :return: a new PPO reinforcement learning agent
     """
 
-    def __init__(self,
-                 model_source,
-                 discount=0.99,
-                 learning_rate=0.0005,
-                 clip_epsilon=0.05,
-                 batch_size=5,
-                 num_batches=10):
-        """
-        Initializes the factory.
+    kwargs = {
+        'model_fn': model_fn,
+        'state_size': state_size,
+        'action_size': action_size,
+        'discrete_action': discrete_action,
+        'discount': discount,
+        'learning_rate': learning_rate,
+        'clip_epsilon': clip_epsilon,
+        'batch_size': batch_size,
+        'num_batches': num_batches,
+        'num_episodes': num_episodes
+    }
 
-        :param model_source:
-        :param discount:
-        :param learning_rate:
-        :param clip_epsilon:
-        :param batch_size:
-        :param num_batches:
-        """
-
-        self.model_source = model_source
-        self.discount = discount
-        self.learning_rate = learning_rate
-        self.clip_epsilon = clip_epsilon
-        self.batch_size = batch_size
-        self.num_batches = num_batches
-
-    def build(self):
-        """
-        Returns a new PPO agent configured according
-        to the factory.  The TensorFlow graph and
-        session to be used must be provided.
-
-        :return: an initialized PPO agent
-        """
-
-        return Agent(self)
+    return lambda: Agent(kwargs)
 
 
 def roboschool_test():
     """
     Tests this PPO implementation in the Roboschool ant domain
+
+    WE MAY MOVE THIS TEST ELSEWHERE
     """
 
     # Initialize environment
