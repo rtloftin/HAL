@@ -36,12 +36,13 @@ def benchmark(agent, environment, episodes=1000, steps=500, window=20):
         print("Episode " + str(episode) + ", return: " + str(average / len(results)))
 
 
-environment = domains.robots.Ant()
-# environment = domains.robots.Hopper()
+env = domains.robots.ant()
+# env = domains.robots.hopper()
 
-model_fn = models.dense_sigmoid(environment.state_size, environment.action_size * 2, hidden_layers=2, hidden_nodes=100)
-agent = algorithms.ppo(model_fn, environment.state_size, environment.action_size,
-                       discrete_action=environment.discrete_action,
+model_fn = models.dense_sigmoid(env.state_space.shape, [2] + list(env.action_space.shape),
+                                hidden_layers=2, hidden_nodes=100)
+
+agent = algorithms.ppo(model_fn, env.state_space, env.action_space,
                        discount=0.99,
                        learning_rate=0.0005,
                        clip_epsilon=0.05,
@@ -49,4 +50,4 @@ agent = algorithms.ppo(model_fn, environment.state_size, environment.action_size
                        num_batches=20,
                        num_episodes=10)
 
-benchmark(agent, environment, episodes=10000, window=10)
+benchmark(agent, env, episodes=10000, window=10)

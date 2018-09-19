@@ -8,119 +8,118 @@ from .RoboschoolAnt_v0 import Policy as AntPolicy
 from .RoboschoolHopper_v0 import Policy as HopperPolicy
 from .RoboschoolReacher_v0 import Policy as ReacherPolicy
 from .RoboschoolInvertedPendulumSwingup_v0 import Policy as PendulumPolicy
+from ..space import Continuous
+
 import gym
 
 
-class Ant:
+class Environment:
+    """
+    A wrapper for the roboschool environments.
+    """
 
-    def __init__(self):
-        self._env = gym.make("RoboschoolAnt-v1")
-        self.state_size = self._env.observation_space.shape[0]
-        self.action_size = self._env.action_space.shape[0]
-        self.action_low = self._env.action_space.low
-        self.action_high = self._env.action_space.high
-        self.discrete_action = False
+    def __init__(self, env, expert):
+        """
+        Initializes the wrapper object.
 
-        self._expert = AntPolicy(self.state_size, self.action_size)
+        :param env: the underlying Gym environment
+        :param expert: the expert policy for this environment
+        """
 
-        self.state = None
-        self.reward = 0
-        self.complete = False
+        self._env = env
+        self._expert = expert
 
-    def reset(self):
-        self.state = self._env.reset()
-        self.reward = 0
-        self.complete = False
+        self._state_space = Continuous(env.observation_space.shape,
+                                       low=env.observation_space.low, high=env.observation_space.high)
+        self._action_space = Continuous(env.action_space.shape, low=env.action_space.low, high=env.action_space.high)
 
-    def update(self, action):
-        if not self.complete:
-            self.state, self.reward, self.complete, _ = self._env.step(action)
-
-    def expert(self):
-        return self._expert(self.state)
-
-
-class Hopper:
-
-    def __init__(self):
-        self._env = gym.make("RoboschoolHopper-v1")
-        self.state_size = self._env.observation_space.shape[0]
-        self.action_size = self._env.action_space.shape[0]
-        self.action_low = self._env.action_space.low
-        self.action_high = self._env.action_space.high
-        self.discrete_action = False
-
-        self._expert = HopperPolicy(self.state_size, self.action_size)
-
-        self.state = None
-        self.reward = 0
-        self.complete = False
+        self._state = self._env.reset()
+        self._reward = 0
+        self._complete = False
 
     def reset(self):
-        self.state = self._env.reset()
-        self.reward = 0
-        self.complete = False
+        """
+        Starts a new episode.
+        """
+
+        self._state = self._env.reset()
+        self._reward = 0
+        self._complete = False
 
     def update(self, action):
-        if not self.complete:
-            self.state, self.reward, self.complete, _ = self._env.step(action)
+        """
+        Takes a single step in the environment.
+
+        :param action: the action to take at this step
+        """
+        if not self._complete:
+            self._state, self._reward, self._complete, _ = self._env.step(action)
 
     def expert(self):
-        return self._expert(self.state)
+        """
+        Gets an action from the expert policy for the current state.
+
+        :return: the action taken by the expert's policy
+        """
+
+        return self._expert(self._state)
+
+    @property
+    def state_space(self):
+        return self._state_space
+
+    @property
+    def action_space(self):
+        return self._action_space
+
+    @property
+    def state(self):
+        return self._state
+
+    @property
+    def reward(self):
+        return self._reward
+
+    @property
+    def complete(self):
+        return self._complete
 
 
-class Reacher:
+def ant():
+    """
+    Gets an instance of the Ant environment.
 
-    def __init__(self):
-        self._env = gym.make("RoboschoolReacher-v1")
-        self.state_size = self._env.observation_space.shape[0]
-        self.action_size = self._env.action_space.shape[0]
-        self.action_low = self._env.action_space.low
-        self.action_high = self._env.action_space.high
-        self.discrete_action = False
+    :return: an Ant environment
+    """
 
-        self._expert = ReacherPolicy(self.state_size, self.action_size)
-
-        self.state = None
-        self.reward = 0
-        self.complete = False
-
-    def reset(self):
-        self.state = self._env.reset()
-        self.reward = 0
-        self.complete = False
-
-    def update(self, action):
-        if not self.complete:
-            self.state, self.reward, self.complete, _ = self._env.step(action)
-
-    def expert(self):
-        return self._expert(self.state)
+    return Environment(gym.make("RoboschoolAnt-v1"), AntPolicy())
 
 
-class Pendulum:
-    def __init__(self):
-        self._env = gym.make("RoboschoolInvertedPendulumSwingup-v1")
-        self.state_size = self._env.observation_space.shape[0]
-        self.action_size = self._env.action_space.shape[0]
-        self.action_low = self._env.action_space.low
-        self.action_high = self._env.action_space.high
-        self.discrete_action = False
+def hopper():
+    """
+    Gets an instance of the Hopper environment.
 
-        self._expert = PendulumPolicy(self.state_size, self.action_size)
+    :return: an Hopper environment
+    """
 
-        self.state = None
-        self.reward = 0
-        self.complete = False
+    return Environment(gym.make("RoboschoolHopper-v1"), HoperPolicy())
 
-    def reset(self):
-        self.state = self._env.reset()
-        self.reward = 0
-        self.complete = False
 
-    def update(self, action):
-        if not self.complete:
-            self.state, self.reward, self.complete, _ = self._env.step(action)
+def reacher():
+    """
+    Gets an instance of the Reacher environment.
 
-    def expert(self):
-        return self._expert(self.state)
+    :return: an Reacher environment
+    """
+
+    return Environment(gym.make("RoboschoolReacher-v1"), ReacherPolicy())
+
+
+def pendulum():
+    """
+    Gets an instance of the Pendulum environment.
+
+    :return: an Pendulum environment
+    """
+
+    return Environment(gym.make("RoboschoolInvertedPendulumSwingup-v1"), PendulumPolicy())

@@ -3,14 +3,10 @@ import numpy as np
 
 import collections
 
-# sess = tf.Session()
-# inputs = tf.placeholder(dtype=tf.int32, shape=[None, 5])
-# print(inputs.shape.dims)
+sess = tf.Session()
+inputs = tf.placeholder(dtype=tf.int32, shape=[None, 2, 2])
+outputs = tf.reshape(inputs, [-1, 4])
 
-queue = collections.deque()
-
-queue.append(1)
-queue.append(2)
-queue.append(3)
-
-print('queue length: ' + str(len(queue)))
+print('output: ' + str(sess.run(outputs, feed_dict={
+    inputs: [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]
+})))

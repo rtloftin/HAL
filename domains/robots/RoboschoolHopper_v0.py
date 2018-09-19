@@ -10,11 +10,6 @@ def relu(x):
 class Policy:
     """Simple multi-layer perceptron policy, no internal state"""
 
-    def __init__(self, state_size, action_size):
-        assert weights_dense1_w.shape == (state_size, 128)
-        assert weights_dense2_w.shape == (128, 64)
-        assert weights_final_w.shape == (64, action_size)
-
     def act(self, ob):
         x = ob
         x = relu(np.dot(x, weights_dense1_w) + weights_dense1_b)
@@ -25,7 +20,7 @@ class Policy:
 
 def run_demo():
     env = gym.make("RoboschoolHopper-v1")
-    pi = Policy(env.observation_space.shape[0], env.action_space.shape[0])
+    pi = Policy()
 
     while 1:
         frame = 0

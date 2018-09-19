@@ -1,8 +1,6 @@
 """
 Defines a reinforcement learning agent which uses
-proximal policy optimization.  Also defines simple
-testing experiments for the PPO algorithm to verify
-the implementation.
+proximal policy optimization.
 """
 
 import tensorflow as tf
@@ -93,8 +91,12 @@ class Agent:
         :param kwargs: the configuration options for the agent
         """
 
+        # Get the state and action spaces
+        state_space = kwargs['state_space']
+        action_space = kwargs['action_space']
+
         # Capture the configuration parameters needed
-        self._discrete_action = kwargs['discrete_action']
+        self._discrete_action = action_space.discrete
         self._discount = kwargs['discount']
         self._batch_size = kwargs['batch_size']
         self._num_batches = kwargs['num_batches']
@@ -106,7 +108,7 @@ class Agent:
 
         # Build the policy network and learning update graph
         with self._graph.as_default():
-            self._state_input = tf.placeholder(dtype=tf.float32, shape=[None, kwargs['state_size']])
+            self._state_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_space.shape))
 
             with tf.variable_scope("policy"):
                 policy_output = kwargs['model_fn'](self._state_input)
@@ -114,10 +116,10 @@ class Agent:
             with tf.variable_scope("hypothesis"):
                 hypothesis_output = kwargs['model_fn'](self._state_input)
 
-            if self._discrete_action:
+            if action_space.discrete:
                 self._action_input = tf.placeholder(dtype=tf.int32, shape=[None])
 
-                one_hot = tf.one_hot(self._action_input, kwargs['action_size'])
+                one_hot = tf.one_hot(self._action_input, action_space.size)
 
                 policy = tf.exp(policy_output)
                 policy = tf.reduce_sum(one_hot * policy, 1) / tf.reduce_sum(policy, 1)
@@ -129,10 +131,13 @@ class Agent:
 
                 self._action_output = tf.multinomial(policy_output, 1)
             else:
-                self._action_input = tf.placeholder(dtype=tf.float32, shape=[None, kwargs['action_size']])
+                self._action_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(action_space.shape))
 
-                policy_mean, policy_deviation = tf.split(policy_output, 2, axis=1)
-                hypothesis_mean, hypothesis_deviation = tf.split(hypothesis_output, 2, axis=1)
+                policy_mean = policy_output[:, 0]
+                policy_deviation = policy_output[:, 1]
+
+                hypothesis_mean = hypothesis_output[:, 0]
+                hypothesis_deviation = hypothesis_output[:, 1]
 
                 policy = tf.square(self._action_input - policy_mean) / tf.exp(policy_deviation)
                 policy = tf.reduce_sum(policy + policy_deviation, axis=1)
@@ -152,13 +157,16 @@ class Agent:
 
             self._update_hypothesis = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
 
-            policy_variables = dict(map(lambda x: (x.name.split('/')[-1], x), tf.trainable_variables(scope='policy')))
+            policy_variables = tf.trainable_variables(scope='policy')
+            policy_variables = dict(map(lambda x: (x.name[len('policy'):], x), policy_variables))
+
             hypothesis_variables = tf.trainable_variables(scope='hypothesis')
+            hypothesis_variables = dict(map(lambda x: (x.name[len('hypothesis'):], x), hypothesis_variables))
 
             self._transfer_hypothesis = []
 
-            for var in hypothesis_variables:
-                self._transfer_hypothesis.append(tf.assign(policy_variables[var.name.split('/')[-1]], var))
+            for key, var in hypothesis_variables.items():
+                self._transfer_hypothesis.append(tf.assign(policy_variables[key], var))
 
             self._session.run(tf.global_variables_initializer())
             self._session.run(self._transfer_hypothesis)
@@ -257,8 +265,7 @@ class Agent:
         self._trajectory.reward(reward)
 
 
-def build(model_fn, state_size, action_size,
-          discrete_action=False,
+def build(model_fn, state_space, action_space,
           discount=0.99,
           learning_rate=0.0005,
           clip_epsilon=0.05,
@@ -270,9 +277,8 @@ def build(model_fn, state_size, action_size,
     rid of the keyword arguments dictionary altogether.
 
     :param model_fn: the function used to build the model graph
-    :param state_size: the number of state features
-    :param action_size: the number of actions or action features
-    :param discrete_action: whether or not the actions are discrete
+    :param state_space: the number of state features
+    :param action_space: the number of actions or action features
     :param discount: the discount factor used to estimate advantages
     :param learning_rate: the learning rate used for training the policies
     :param clip_epsilon: the clipping radius for the policy ratio
@@ -283,9 +289,8 @@ def build(model_fn, state_size, action_size,
     """
 
     return Agent(model_fn=model_fn,
-                 state_size=state_size,
-                 action_size=action_size,
-                 discrete_action=discrete_action,
+                 state_space=state_space,
+                 action_space=action_space,
                  discount=discount,
                  learning_rate=learning_rate,
                  clip_epsilon=clip_epsilon,
