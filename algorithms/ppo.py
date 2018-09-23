@@ -1,6 +1,7 @@
 """
-Defines a reinforcement learning agent which uses
-proximal policy optimization.
+Defines a reinforcement learning agent which uses a
+simple version of proximal policy optimization, without an
+actor-critic style baseline value function.
 """
 
 import tensorflow as tf
@@ -227,17 +228,6 @@ class Agent:
             self._update()
             self._episode_count = 0
 
-    def observe(self, state, action, reward):
-        """
-        Adds a step to the agent's experience
-
-        :param state: the current state
-        :param action: the action taken
-        :param reward: the reward signal for the current time step
-        """
-
-        self._trajectory.append(state, action, reward)
-
     def act(self, state, evaluation=False):
         """
         Records the current state, and selects the agent's action
@@ -264,6 +254,13 @@ class Agent:
 
         self._trajectory.reward(reward)
 
+    def close(self):
+        """
+        Closes the Tensorflow session associated with this agent.
+        """
+
+        self._session.close()
+
 
 def build(model_fn, state_space, action_space,
           discount=0.99,
@@ -276,10 +273,10 @@ def build(model_fn, state_space, action_space,
     Builds a new PPO reinforcement learning agent.  We may want to get
     rid of the keyword arguments dictionary altogether.
 
-    :param model_fn: the function used to build the model graph
+    :param model_fn: the function used to build the model graphs
     :param state_space: the number of state features
     :param action_space: the number of actions or action features
-    :param discount: the discount factor used to estimate advantages
+    :param discount: the discount factor of the MDP
     :param learning_rate: the learning rate used for training the policies
     :param clip_epsilon: the clipping radius for the policy ratio
     :param batch_size: the batch size used for training the policies

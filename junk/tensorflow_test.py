@@ -3,7 +3,10 @@ import numpy as np
 
 import collections
 
+print('STARTING SESSION')
 sess = tf.Session()
+print('SESSION STARTED')
+
 inputs = tf.placeholder(dtype=tf.int32, shape=[None, 2, 2])
 outputs = tf.reshape(inputs, [-1, 4])
 

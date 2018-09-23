@@ -7,19 +7,19 @@ from domains.robots.RoboschoolInvertedPendulumSwingup_v0 import Policy as Pendul
 
 # Reacher
 # env = gym.make("RoboschoolReacher-v1")
-# agent = ReacherAgent(env.observation_space, env.action_space)
+# agent = ReacherAgent()
 
 # Hopper
-# env = gym.make("RoboschoolHopper-v1")
-# agent = HopperAgent(env.observation_space, env.action_space)
+env = gym.make("RoboschoolHopper-v1")
+agent = HopperAgent()
 
 # Ant
-env = gym.make("RoboschoolAnt-v1")
-agent = AntAgent(env.observation_space, env.action_space)
+# env = gym.make("RoboschoolAnt-v1")
+# agent = AntAgent()
 
 # Pendulum
 # env = gym.make("RoboschoolInvertedPendulumSwingup-v1")
-# agent = PendulumAgent(env.observation_space, env.action_space)
+# agent = PendulumAgent()
 
 num_episodes = 100
 total_reward = 0
