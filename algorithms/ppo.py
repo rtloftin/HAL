@@ -103,9 +103,9 @@ class Agent:
         self._num_batches = kwargs['num_batches']
         self._num_episodes = kwargs['num_episodes']
 
-        # Create graph and session
+        # Create graph and the session placeholder
         self._graph = tf.Graph()
-        self._session = tf.Session(graph=self._graph)
+        self._session = None
 
         # Build the policy network and learning update graph
         with self._graph.as_default():
@@ -169,16 +169,37 @@ class Agent:
             for key, var in hypothesis_variables.items():
                 self._transfer_hypothesis.append(tf.assign(policy_variables[key], var))
 
-            self._session.run(tf.global_variables_initializer())
-            self._session.run(self._transfer_hypothesis)
+            self._initialize = tf.variables_initializer(tf.global_variables())
 
-        # Internal state
         self._data = []
         self._trajectory = None
         self._episode_count = 0
 
-        # Reset the agent so it treats the next step as an initial state
+    def __enter__(self):
+        """
+        Defines the TensorFlow session that this agent will
+        use, and initializes the model parameters.
+
+        :return: the agent itself
+        """
+        self._session = tf.Session(graph=self._graph)
+        self._session.run(self._initialize)
+        self._session.run(self._transfer_hypothesis)
         self.reset()
+
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Releases the agent's TensorFlow session
+
+        :param exc_type: ignored
+        :param exc_val: ignored
+        :param exc_tb: ignored
+        :return: always false, do not suppress exceptions
+        """
+
+        self._session.close()
 
     def _update(self):
         """

@@ -105,7 +105,7 @@ class Agent:
 
         # Create graph and session
         self._graph = tf.Graph()
-        self._session = tf.Session(graph=self._graph)
+        self._session = None
 
         # Build the policy network and learning update graph
         with self._graph.as_default():
@@ -205,22 +205,46 @@ class Agent:
 
             self._actor_update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
 
-            # Initialize actor and critic
-            self._session.run(tf.global_variables_initializer())
-            self._session.run(self._transfer_critic)
-            self._session.run(self._transfer_actor)
+            # Initializer
+            self._initialize = tf.variables_initializer(tf.global_variables())
 
-        # Internal state
+        # Initialize internal state
         self._trajectories = []
         self._trajectory = None
         self._episode_count = 0
 
-        # Reset the agent so it treats the next step as an initial state
+    def __enter__(self):
+        """
+        Defines the TensorFlow session that this agent will
+        use, and initializes the model parameters.
+
+        :return: the agent itself
+        """
+        self._session = tf.Session(graph=self._graph)
+        self._session.run(self._initialize)
+        self._session.run(self._transfer_critic)
+        self._session.run(self._transfer_actor)
         self.reset()
 
-    def _update_critic(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
         """
-        Updates the critic to estimate the value of the current policy.
+        Releases the agent's TensorFlow session
+
+        :param exc_type: ignored
+        :param exc_val: ignored
+        :param exc_tb: ignored
+        :return: always false, do not suppress exceptions
+        """
+
+        self._session.close()
+
+    def _update_critic_full(self):
+        """
+        Updates the critic to estimate the value of the current policy.  Only updates the target network
+        once, that is, it only does one round of value iteration, but multiple gradient steps.  Uses all the
+        data at each gradient update.
 
         The way the critic update is currently defined, the target network seems to be unnecessary.
         """
@@ -251,6 +275,44 @@ class Agent:
 
         self._session.run(self._transfer_critic)
 
+    def _update_critic_batch(self):
+        """
+        Updates the critic to estimate the value of the current policy.  Only updates the target network
+        once, that is, it only does one round of value iteration, but multiple gradient steps.  Uses a random
+        sample of states for each critic update
+
+        The way the critic update is currently defined, the target network seems to be unnecessary.
+        """
+
+        samples = []
+
+        for trajectory in self._trajectories:
+            critic = self._session.run(self._critic, feed_dict={self._state_input: trajectory.states})
+
+            value = trajectory.rewards[-1]
+            samples.append(Sample(trajectory.states[-1], trajectory.actions[-1], value))
+
+            for t in reversed(range(len(trajectory) - 1)):
+                value *= self._discount * self._mixing
+                value += trajectory.rewards[t] + ((1.0 - self._mixing) * self._discount * critic[t + 1, 0])
+                samples.append(Sample(trajectory.states[t], trajectory.actions[t], value))
+
+        for _ in range(self._num_batches):
+            batch = np.random.choice(samples, self._batch_size, replace=False)
+            states = []
+            values = []
+
+            for sample in batch:
+                states.append(sample.state)
+                values.append(sample.value)
+
+                self._session.run(self._critic_update, feed_dict={
+                    self._state_input: states,
+                    self._value_input: values
+                })
+
+        self._session.run(self._transfer_critic)
+
     def _update(self):
         """
         Updates the agent's policy based on recent experience.
@@ -259,7 +321,7 @@ class Agent:
         end up being too computationally expensive.
         """
 
-        self._update_critic()
+        self._update_critic_full()
 
         # Compute advantages
         samples = []
@@ -364,12 +426,10 @@ def build(actor_fn, critic_fn, state_space, action_space,
     Builds a new PPO reinforcement learning agent.  We may want to get
     rid of the keyword arguments dictionary altogether.
 
-    WE MAY NOT NEED SEPARATE VALUES FOR THE DISCOUNT AND MIXING FACTORS
-
     :param actor_fn: the function used to build the actor graphs
     :param critic_fn: the function used to build the critic graphs
-    :param state_space: the number of state features
-    :param action_space: the number of actions or action features
+    :param state_space: the state space
+    :param action_space: the action space
     :param discount: the discount factor of the MDP
     :param mixing: the mixing factor for the advantage estimators
     :param learning_rate: the learning rate used for training the policies

@@ -37,6 +37,27 @@ class Environment:
         self._reward = 0
         self._complete = False
 
+    def get_tasks(self):
+        """
+        Returns a list of the task names for this environment, for
+        the Roboschool environments we only have the 'default' task
+
+        :return: a list of task names
+        """
+
+        return ['default']
+
+    def set_task(self, name):
+        """
+        Sets the current task for the environment.
+
+        Does nothing for the Roboschool environments
+
+        :param name: the task name
+        """
+
+        pass
+
     def reset(self):
         """
         Starts a new episode.
@@ -62,7 +83,7 @@ class Environment:
         :return: the action taken by the expert's policy
         """
 
-        return self._expert(self._state)
+        return self._expert.act(self._state)
 
     @property
     def state_space(self):

@@ -6,6 +6,24 @@ import tensorflow as tf
 import numpy as np
 
 
+class Sample:
+    """
+    Represents a demonstrated state-action pair.  Used to overcome
+    Numpy's issue with randomly sampling from lists of tuples
+    """
+
+    def __init__(self, state, action):
+        """
+        Initializes the sample.
+
+        :param state: the current state
+        :param action: the action taken
+        """
+
+        self.state = state
+        self.action = action
+
+
 class TaskAgent:
     """
     A behavioral cloning agent for a single task.
@@ -23,44 +41,52 @@ class TaskAgent:
         # Capture the session
         self._session = session
 
+        # Capture the state and action spaces
+        state_space = kwargs['state_space']
+        action_space = kwargs['action_space']
+
         # Capture the learning parameters
+        self._discrete_action = action_space.discrete
         self._batch_size = kwargs['batch_size']
         self._num_batches = kwargs['num_batches']
-        self._discrete_action = kwargs['discrete_action']
 
         # Initialize the data set
         self._data = []
 
         # Construct the model
         with graph.as_default():
-            self._state_input = tf.placeholder(dtype=tf.float32, shape=[None, kwargs['state_size']])
-            output = kwargs['model_fn'](self._state_input)
+            with tf.variable_scope(None, default_name='task'):
+                self._state_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_space.shape))
+                output = kwargs['model_fn'](self._state_input)
 
-            # Define loss and action output
-            if self._discrete_action:
-                self._action_input = tf.placeholder(dtype=tf.int32, shape=[None])
+                # Define loss and action output
+                if self._discrete_action:
+                    self._action_input = tf.placeholder(dtype=tf.int32, shape=[None])
 
-                one_hot = tf.one_hot(self._action_input, kwargs['action_size'])
-                exp = tf.exp(output)
+                    one_hot = tf.one_hot(self._action_input, action_space.size)
+                    exp = tf.exp(output)
 
-                loss = tf.reduce_sum(tf.log(tf.reduce_sum(exp, axis=1)) - (one_hot * output))
-                self._action = tf.multinomial(output, 1)
-            else:
-                self._action_input = tf.placeholder(dtype=tf.float32, shape=[None, kwargs['action_size']])
+                    loss = tf.reduce_sum(tf.log(tf.reduce_sum(exp, axis=1)) - (one_hot * output))
+                    self._action = tf.multinomial(output, 1)
+                else:
+                    self._action_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(action_space.shape))
 
-                action_mean, action_deviation = tf.split(output, 2, axis=1)
-                action_deviation = tf.exp(tf.multiply(action_deviation, 0.5))
+                    # This loss is wrong
 
-                loss = tf.reduce_sum(tf.square((self._action_input - action_mean) / action_deviation))
+                    action_mean = output[:, 0]
+                    action_deviation = output[:, 1]
 
-                noise = tf.random_normal(tf.shape(action_mean))
-                self._action = action_mean + (noise * action_deviation)
+                    loss = tf.square((self._action_input - action_mean) / tf.exp(action_deviation))
+                    loss = tf.reduce_sum(tf.multiply(loss, 0.5) + action_deviation)
 
-            # Define policy update
-            self._update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
+                    noise = tf.random_normal(tf.shape(action_mean))
+                    self._action = action_mean + (noise * tf.exp(action_deviation))
 
-            # Initialize model
-            self._session.run(tf.global_variables_initializer())
+                # Define policy update
+                self._update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
+
+                # Initialize the model
+                self._session.run(tf.variables_initializer(tf.global_variables(scope=tf.get_variable_scope().name)))
 
     def demonstrate(self, state, action):
         """
@@ -70,7 +96,7 @@ class TaskAgent:
         :param action: the action taken in that state
         """
 
-        self._data.append((state, action))
+        self._data.append(Sample(state, action))
 
     def act(self, state):
         """
@@ -80,26 +106,26 @@ class TaskAgent:
         :return: the sampled action
         """
 
-        action = self._session.run(action, feed_dict={self._state_input: [state]})
+        action = self._session.run(self._action, feed_dict={self._state_input: [state]})
+        action = action[0, 0] if self._discrete_action else action[0]
 
-        if self._discrete_action:
-            return action[0, 0]
-        else:
-            return action[0]
+        return action
 
-    def update(self):
+    def incorporate(self):
         """
         Updates the agent's policy based on the available data
         """
 
-        for _ in range(self._num_batches):
+        for b in range(self._num_batches):
+            print("batch " + str(b))
+
             batch = np.random.choice(self._data, size=self._batch_size)
             states = []
             actions = []
 
             for sample in batch:
-                states.append(sample[0])
-                actions.append(sample[1])
+                states.append(sample.state)
+                actions.append(sample.action)
 
             self._session.run(self._update, feed_dict={
                 self._state_input: states,
@@ -115,7 +141,7 @@ class Agent:
     a set of demonstrated actions.
     """
 
-    def __init__(self, kwargs):
+    def __init__(self, **kwargs):
         """
         Initializes the agent.  Just initializes the dictionary of
         task models and the Tensorflow graph and session.
@@ -128,11 +154,33 @@ class Agent:
 
         # Create graph and session
         self._graph = tf.Graph()
-        self._session = tf.Session(graph=self._graph)
+        self._session = None
 
         # Create task dictionary and define current task
         self._tasks = dict()
         self._current = None
+
+    def __enter__(self):
+        """
+        Initializes the TensorFlow session used by this agent.
+
+        :return: the agent itself
+        """
+
+        self._session = tf.Session(graph=self._graph)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Closes the TensorFlow session.
+
+        :param exc_type: ignored
+        :param exc_val: ignored
+        :param exc_tb: ignored
+        :return: always False, never suppress exceptions
+        """
+
+        self._session.close()
 
     def set_task(self, name):
         """
@@ -145,6 +193,15 @@ class Agent:
             self._tasks[name] = TaskAgent(self._graph, self._session, self._kwargs)
 
         self._current = self._tasks[name]
+
+    def incorporate(self):
+        """
+        Updates the agent's policies to incorporate all of the
+        demonstrations that have been provided so far.
+        """
+
+        for task in self._tasks.values():
+            task.incorporate()
 
     def reset(self):
         """
@@ -164,42 +221,38 @@ class Agent:
 
         self._current.demonstrate(state, action)
 
-    def act(self, state):
+    def act(self, state, evaluation=False):
         """
-        Samples an action from the agent's policy for the current task.
+        Samples an action from the agent's policy for the current
+        task, and records the state-action pair.
 
         :param state: the current state
+        :param evaluation: behavioral cloning ignores this argument, never records its own actions
         :return: the sampled action
         """
 
         return self._current.act(state)
 
 
-def factory(model_fn, state_size, action_size,
-            discrete_action=False,
-            learning_rate=0.01,
-            batch_size=10,
-            num_batches=1000):
+def build(model_fn, state_space, action_space,
+          learning_rate=0.01,
+          batch_size=10,
+          num_batches=1000):
     """
-    Gets a method which constructs new multi-task behavioral cloning agents.
+    Constructs a new multi-task behavioral cloning agents.
 
     :param model_fn: the function used to build the model graph
-    :param state_size: the number of state features
-    :param action_size: the number of actions or action features
-    :param discrete_action: whether or not the actions are discrete
+    :param state_space: the state space
+    :param action_space: the action space
     :param learning_rate: the learning rate used for training the policies
     :param batch_size: the batch size used for training the policies
     :param num_batches: the number of batches used for training the policies
     :return: a new behavioral cloning agent
     """
-    kwargs = {
-        'model_fn': model_fn,
-        'state_size': state_size,
-        'action_size': action_size,
-        'discrete_action': discrete_action,
-        'learning_rate': learning_rate,
-        'batch_size': batch_size,
-        'num_batches': num_batches
-    }
 
-    return lambda: Agent(kwargs)
+    return Agent(model_fn=model_fn,
+                 state_space=state_space,
+                 action_space=action_space,
+                 learning_rate=learning_rate,
+                 batch_size=batch_size,
+                 num_batches=num_batches)
