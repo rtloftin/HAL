@@ -1,13 +1,10 @@
 """
-Defines a reinforcement learning agent which uses a
-simple version of proximal policy optimization, without an
-actor-critic style baseline value function.
+Defines an imitation learning agent which uses the GAIL
+algorithm, with policy updates based on PPO (as opposed to TRPO).
 """
 
 import tensorflow as tf
 import numpy as np
-import gym
-import roboschool
 
 
 class Sample:
@@ -38,7 +35,6 @@ class Trajectory:
     def __init__(self):
         self._states = []
         self._actions = []
-        self._rewards = []
 
     def __len__(self):
         return len(self._states)
@@ -51,44 +47,23 @@ class Trajectory:
         :param action: the action
         """
 
-        self._states.append(state)
-        self._actions.append(action)
-        self._rewards.append(0.0)
-
-    def reward(self, reward):
-        """
-        Adds to the reward value of the most recent step.
-
-        :param reward: the immediate reward
-        """
-
-        if len(self._rewards) != 0:
-            self._rewards[-1] += reward
-
-    @property
-    def states(self):
-        return self._states
-
-    @property
-    def actions(self):
-        return self._actions
-
-    @property
-    def rewards(self):
-        return self._rewards
+        self.states.append(state)
+        self.actions.append(action)
 
 
-class Agent:
+class TaskAgent:
     """
-    An online RL agent which updates its policy
-    using a version of the PPO algorithm.
+    A GAIL agent for a single task
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, data, graph, session, kwargs):
         """
-        Initializes a new PPO agent.
+        Initializes the agent.
 
-        :param kwargs: the configuration options for the agent
+        :param data: the demonstrated state-action pairs for this task
+        :param graph: the Tensorflow graph to be used
+        :param session: the Tensorflow session to be used
+        :param kwargs: the configuration session for the agent
         """
 
         # Get the state and action spaces
@@ -103,28 +78,32 @@ class Agent:
         self._num_batches = kwargs['num_batches']
         self._num_episodes = kwargs['num_episodes']
 
-        # Create graph and session
-        self._graph = tf.Graph()
-        self._session = None
+        # Capture instance variables
+        self._session = session
+        self._discrete_action = action_space.discrete
+        self._data = data
 
         # Build the policy network and learning update graph
-        with self._graph.as_default():
+        with graph.as_default(), tf.variable_scope(None, default_name='task'):
 
             # Define common state input
             self._state_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_space.shape))
 
-            # Define target and hypothesis models for the actor and critic
+            # Define the discriminator, and the target and hypothesis models for the actor and critic
+            with tf.variable_scope("target_actor"):
+                target_actor = kwargs['actor_fn'](self._state_input)
+
+            with tf.variable_scope("hypothesis_actor"):
+                hypothesis_actor = kwargs['actor_fn'](self._state_input)
+
             with tf.variable_scope("target_critic"):
                 target_critic = kwargs['critic_fn'](self._state_input)
 
             with tf.variable_scope("hypothesis_critic"):
                 hypothesis_critic = kwargs['critic_fn'](self._state_input)
 
-            with tf.variable_scope("target_actor"):
-                target_actor = kwargs['actor_fn'](self._state_input)
-
-            with tf.variable_scope("hypothesis_actor"):
-                hypothesis_actor = kwargs['actor_fn'](self._state_input)
+            with tf.variable_scope("discriminator"):
+                discriminator = kwargs['cost_fn'](self._state_input)
 
             # Define parameter transfer operations
             target_critic_vars = tf.trainable_variables(scope='target_critic')
@@ -190,6 +169,13 @@ class Agent:
                 noise = tf.random_normal(tf.shape(target_mean))
                 self._action = target_mean + (noise * tf.exp(tf.multiply(target_deviation, 0.5)))
 
+            # Discriminator update
+            self._expert = tf.placeholder(dtype=tf.float32, shape=[None])
+            self.cost = tf.log(discriminator)
+
+            loss = tf.reduce_sum((1.0 - self._expert) * self._cost + self._expert * tf.log(1.0 - discriminator))
+            self._discriminator_update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
+
             # Critic update
             self._critic = target_critic
             self._value_input = tf.placeholder(dtype=tf.float32, shape=[None])
@@ -213,69 +199,7 @@ class Agent:
         self._trajectory = None
         self._episode_count = 0
 
-    def __enter__(self):
-        """
-        Defines the TensorFlow session that this agent will
-        use, and initializes the model parameters.
-
-        :return: the agent itself
-        """
-        self._session = tf.Session(graph=self._graph)
-        self._session.run(self._initialize)
-        self._session.run(self._transfer_critic)
-        self._session.run(self._transfer_actor)
-        self.reset()
-
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """
-        Releases the agent's TensorFlow session
-
-        :param exc_type: ignored
-        :param exc_val: ignored
-        :param exc_tb: ignored
-        :return: always false, do not suppress exceptions
-        """
-
-        self._session.close()
-
-    def _update_critic_full(self):
-        """
-        Updates the critic to estimate the value of the current policy.  Only updates the target network
-        once, that is, it only does one round of value iteration, but multiple gradient steps.  Uses all the
-        data at each gradient update.
-
-        The way the critic update is currently defined, the target network seems to be unnecessary.
-        """
-
-        states = []
-        estimates = []
-
-        for trajectory in self._trajectories:
-            critic = self._session.run(self._critic, feed_dict={self._state_input: trajectory.states})
-            values = np.empty([len(trajectory)])
-
-            value = trajectory.rewards[-1]
-            values[-1] = value
-
-            for t in reversed(range(len(trajectory) - 1)):
-                value *= self._discount * self._mixing
-                value += trajectory.rewards[t] + ((1.0 - self._mixing) * self._discount * critic[t + 1, 0])
-                values[t] = value
-
-            states.extend(trajectory.states)
-            estimates.extend(values)
-
-        for _ in range(self._num_batches):
-            self._session.run(self._critic_update, feed_dict={
-                self._state_input: states,
-                self._value_input: values
-            })
-
-        self._session.run(self._transfer_critic)
-
-    def _update_critic_batch(self):
+    def _update_critic(self):
         """
         Updates the critic to estimate the value of the current policy.  Only updates the target network
         once, that is, it only does one round of value iteration, but multiple gradient steps.  Uses a random
@@ -313,15 +237,83 @@ class Agent:
 
         self._session.run(self._transfer_critic)
 
+    def _update_discriminator(self):
+        """
+        Updates the discriminator based on recent experience
+        """
+
+        samples = []
+
+        for trajectory in self._trajectories:
+            samples.extend(trajectory.states)
+
+        for _ in range(self._num_batches):
+            states = []
+            expert = []
+
+            # Agent batch
+            batch = np.random.choice(samples, self._batch_size, replace=False)
+
+            for state in batch:
+                states.append(state)
+                expert.append(0.0)
+
+            # Expert batch
+            batch = np.random.choice(self._data, self._batch_size, replace=False)
+
+            for sample in batch:
+                states.append(sample.state)
+                expert.append(1.0)
+
+            self._session.run(self._discriminator_update, feed_dict={
+                self._state_input: states,
+                self._expert: expert
+            })
+
     def _update(self):
         """
         Updates the agent's policy based on recent experience.
 
         Right now we pass every state through the critic, but this may
         end up being too computationally expensive.
+
+        WE NEED TO ORGANIZE THIS BETTER, RIGHT NOW WE ARE DOING A LOT OF STUPID THINGS
         """
 
-        self._update_critic_full()
+        # Update discriminator
+        self._update_discriminator()
+
+        # Update critic
+        samples = []
+
+        for trajectory in self._trajectories:
+            critic = self._session.run(self._critic, feed_dict={self._state_input: trajectory.states})
+
+            value = trajectory.rewards[-1]
+            samples.append(Sample(trajectory.states[-1], trajectory.actions[-1], value))
+
+            for t in reversed(range(len(trajectory) - 1)):
+                value *= self._discount * self._mixing
+                value += trajectory.rewards[t] + ((1.0 - self._mixing) * self._discount * critic[t + 1, 0])
+                samples.append(Sample(trajectory.states[t], trajectory.actions[t], value))
+
+        for _ in range(self._num_batches):
+            batch = np.random.choice(samples, self._batch_size, replace=False)
+            states = []
+            values = []
+
+            for sample in batch:
+                states.append(sample.state)
+                values.append(sample.value)
+
+                self._session.run(self._critic_update, feed_dict={
+                    self._state_input: states,
+                    self._value_input: values
+                })
+
+        self._session.run(self._transfer_critic)
+
+        # Update actor
 
         # Compute advantages
         samples = []
@@ -397,37 +389,90 @@ class Agent:
 
         return action
 
-    def reward(self, reward):
-        """
-        Gives an immediate reward to the agent for the most recent step.
 
-        :param reward: the reward value
-        """
-
-        self._trajectory.reward(reward)
-
-    def close(self):
-        """
-        Closes the Tensorflow session associated with this agent.
-        """
-
-        self._session.close()
-
-
-def build(actor_fn, critic_fn, state_space, action_space,
-          discount=0.99,
-          mixing=0.9,
-          learning_rate=0.0005,
-          clip_epsilon=0.05,
-          batch_size=50,
-          num_batches=20,
-          num_episodes=10):
+class Agent:
     """
-    Builds a new PPO reinforcement learning agent.  We may want to get
-    rid of the keyword arguments dictionary altogether.
+    A multi-task GAIL agent.
+    """
+
+    def __init__(self, graph, session, kwargs):
+        """
+        Initializes the agent.  Just initializes the dictionary of
+        task models and the TensorFlow graph and session.
+
+        :param kwargs: the configuration parameters for the agent.
+        """
+
+        # Capture graph, session and configuration
+        self._graph = graph
+        self._session = session
+        self._kwargs = kwargs
+
+        # Create task dictionary and define current task
+        self._tasks = dict()
+        self._current = None
+
+    def demonstrate(self, data):
+        """
+        Initializes the agent with a set of demonstrations.
+
+        :param data: the demonstration data set
+        """
+
+        for task in data.tasks():
+            self._tasks[task] = TaskAgent(data.steps(task), self._graph, self._session, self._kwargs)
+
+    def set_task(self, name):
+        """
+        Sets the task that the agent is currently learning to perform.
+
+        :param name: the name of the task
+        """
+
+        if name not in self._tasks:
+            self._tasks[name] = TaskAgent(self._graph, self._session, self._kwargs)
+
+        self._current = self._tasks[name]
+
+    def reset(self, task=None):
+        """
+        Indicates to the agent that a new episode has started, that is
+        the current state was sampled independently of the previous
+        state.  Also allows for the current task to be set.
+
+        :param task: the name of the current task, if set, will change the task the agent is executing
+        """
+
+        if task is not None:
+            self.set_task(task)
+
+    def act(self, state, evaluation=False):
+        """
+        Samples an action from the agent's policy for the current task.
+
+        :param state: the current stated
+        :param evaluation: if true, the agent will ignore this state
+        :return: the sampled action
+        """
+
+        return self._current.act(state, evaluation)
+
+
+def manager(actor_fn, critic_fn, cost_fn, state_space, action_space,
+            discount=0.99,
+            mixing=0.9,
+            learning_rate=0.0005,
+            clip_epsilon=0.05,
+            batch_size=50,
+            num_batches=20,
+            num_episodes=10):
+    """
+    Returns a context manager which is used to instantiate and clean up GAIL
+    agent with the provided configuration, one that uses PPO policy updates.
 
     :param actor_fn: the function used to build the actor graphs
     :param critic_fn: the function used to build the critic graphs
+    :param cost_fn: the function used to build the discriminator graphs
     :param state_space: the state space
     :param action_space: the action space
     :param discount: the discount factor of the MDP
@@ -437,17 +482,43 @@ def build(actor_fn, critic_fn, state_space, action_space,
     :param batch_size: the batch size used for training the policies
     :param num_batches: the number of gradient steps to do per update
     :param num_episodes: the number of episodes performed between updates
-    :return: a new PPO reinforcement learning agent
+    :return: a context manager which creates a new GAIL agent
     """
 
-    return Agent(actor_fn=actor_fn,
-                 critic_fn=critic_fn,
-                 state_space=state_space,
-                 action_space=action_space,
-                 discount=discount,
-                 mixing=mixing,
-                 learning_rate=learning_rate,
-                 clip_epsilon=clip_epsilon,
-                 batch_size=batch_size,
-                 num_batches=num_batches,
-                 num_episodes=num_episodes)
+    class Manager:
+
+        def __enter__(self):
+            self._graph = tf.Graph()
+            self._session = tf.Session(graph=self._graph)
+
+            return Agent(self._graph, self._session,
+                         actor_fn=actor_fn,
+                         critic_fn=critic_fn,
+                         cost_fn=cost_fn,
+                         state_space=state_space,
+                         action_space=action_space,
+                         discount=discount,
+                         mixing=mixing,
+                         learning_rate=learning_rate,
+                         clip_epsilon=clip_epsilon,
+                         batch_size=batch_size,
+                         num_batches=num_batches,
+                         num_episodes=num_episodes)
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            """
+            Closes the session associated with the current agent.
+
+            :param exc_type: ignored
+            :param exc_val: ignored
+            :param exc_tb: ignored
+            :return: always False, never suppress exceptions
+            """
+
+            self._session.close()
+            self._session = None
+            self._graph = None
+
+            return False
+
+    return Manager()

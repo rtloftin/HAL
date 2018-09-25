@@ -3,7 +3,7 @@ Methods to evaluate the different RL algorithms that
 form the basis of the interactive learning algorithms.
 """
 
-import algorithms
+import agents
 import models
 import domains.robots
 
@@ -44,7 +44,7 @@ actor_fn = models.dense_sigmoid(env.state_space.shape, [2] + list(env.action_spa
                                 hidden_layers=2, hidden_nodes=200)
 critic_fn = models.dense_sigmoid(env.state_space.shape, [1], hidden_layers=2, hidden_nodes=200)
 
-# agent = algorithms.ppo(actor_fn, env.state_space, env.action_space,
+# agent = agents.ppo(actor_fn, env.state_space, env.action_space,
 #                       discount=0.99,
 #                       learning_rate=0.0005,
 #                       clip_epsilon=0.1,
@@ -52,13 +52,13 @@ critic_fn = models.dense_sigmoid(env.state_space.shape, [1], hidden_layers=2, hi
 #                       num_batches=10,
 #                       num_episodes=10)
 
-agent = algorithms.ppo_ac(actor_fn, critic_fn, env.state_space, env.action_space,
-                          discount=0.99,
-                          mixing=0.9,
-                          learning_rate=0.001,
-                          clip_epsilon=0.1,
-                          batch_size=256,
-                          num_batches=50,
-                          num_episodes=5)
+agent = agents.ppo_ac(actor_fn, critic_fn, env.state_space, env.action_space,
+                      discount=0.99,
+                      mixing=0.9,
+                      learning_rate=0.001,
+                      clip_epsilon=0.1,
+                      batch_size=256,
+                      num_batches=50,
+                      num_episodes=5)
 
 benchmark(agent, env, episodes=3000, window=10)

@@ -47,20 +47,11 @@ class Environment:
 
         return ['default']
 
-    def set_task(self, name):
+    def reset(self, task=None):
         """
-        Sets the current task for the environment.
+        Starts a new episode.  Resets to a random initial state.
 
-        Does nothing for the Roboschool environments
-
-        :param name: the task name
-        """
-
-        pass
-
-    def reset(self):
-        """
-        Starts a new episode.
+        :param task: the name of the current task, if set, changes the current task
         """
 
         self._state = self._env.reset()
