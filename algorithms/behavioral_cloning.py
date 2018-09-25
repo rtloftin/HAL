@@ -66,7 +66,7 @@ class TaskAgent:
                     one_hot = tf.one_hot(self._action_input, action_space.size)
                     exp = tf.exp(output)
 
-                    loss = tf.reduce_sum(tf.log(tf.reduce_sum(exp, axis=1)) - (one_hot * output))
+                    loss = tf.reduce_mean(tf.log(tf.reduce_sum(exp, axis=1)) - (one_hot * output))
                     self._action = tf.multinomial(output, 1)
                 else:
                     self._action_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(action_space.shape))
@@ -77,7 +77,7 @@ class TaskAgent:
                     action_deviation = output[:, 1]
 
                     loss = tf.square((self._action_input - action_mean) / tf.exp(action_deviation))
-                    loss = tf.reduce_sum(tf.multiply(loss, 0.5) + action_deviation)
+                    loss = tf.reduce_mean(tf.multiply(loss, 0.5) + action_deviation)
 
                     noise = tf.random_normal(tf.shape(action_mean))
                     self._action = action_mean + (noise * tf.exp(action_deviation))

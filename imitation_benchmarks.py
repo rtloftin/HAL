@@ -76,15 +76,15 @@ def benchmark(agent, environment, demonstrations=100, episodes=100, steps=500, w
             print("Episode " + str(episode) + ", total return: " + str(average / len(results)))
 
 
-env = domains.robots.ant()
-# env = domains.robots.hopper()
+# env = domains.robots.ant()
+env = domains.robots.hopper()
 
 actor_fn = models.dense_sigmoid(env.state_space.shape, [2] + list(env.action_space.shape),
-                                hidden_layers=2, hidden_nodes=200)
+                                hidden_layers=2, hidden_nodes=64)
 
 agent = algorithms.behavioral_cloning(actor_fn, env.state_space, env.action_space,
-                                      learning_rate=0.001,
-                                      batch_size=128,
+                                      learning_rate=0.0005,
+                                      batch_size=512,
                                       num_batches=3000)
 
 benchmark(agent, env)

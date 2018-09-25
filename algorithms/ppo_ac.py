@@ -157,10 +157,10 @@ class Agent:
 
                 # Probability ratios
                 target = tf.exp(target_actor)
-                target = tf.reduce_sum(one_hot * target, 1) / tf.reduce_sum(target, 1)
+                target = tf.reduce_sum(one_hot * target, axis=1) / tf.reduce_sum(target, axis=1)
 
                 hypothesis = tf.exp(hypothesis_actor)
-                hypothesis = tf.reduce_sum(one_hot * hypothesis, 1) / tf.reduce_sum(hypothesis, 1)
+                hypothesis = tf.reduce_sum(one_hot * hypothesis, axis=1) / tf.reduce_sum(hypothesis, axis=1)
 
                 ratio = hypothesis / tf.stop_gradient(target)
 

@@ -123,10 +123,10 @@ class Agent:
                 one_hot = tf.one_hot(self._action_input, action_space.size)
 
                 policy = tf.exp(policy_output)
-                policy = tf.reduce_sum(one_hot * policy, 1) / tf.reduce_sum(policy, 1)
+                policy = tf.reduce_sum(one_hot * policy, axis=1) / tf.reduce_sum(policy, axis=1)
 
                 hypothesis = tf.exp(hypothesis_output)
-                hypothesis = tf.reduce_sum(one_hot * hypothesis, 1) / tf.reduce_sum(hypothesis, 1)
+                hypothesis = tf.reduce_sum(one_hot * hypothesis, axis=1) / tf.reduce_sum(hypothesis, axis=1)
 
                 ratio = hypothesis / tf.stop_gradient(policy)
 

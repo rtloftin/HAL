@@ -123,7 +123,7 @@ def hopper():
     :return: an Hopper environment
     """
 
-    return Environment(gym.make("RoboschoolHopper-v1"), HoperPolicy())
+    return Environment(gym.make("RoboschoolHopper-v1"), HopperPolicy())
 
 
 def reacher():
