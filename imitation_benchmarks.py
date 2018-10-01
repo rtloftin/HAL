@@ -8,6 +8,8 @@ import models
 import domains.robots
 
 import collections
+import sys
+import numpy as np
 
 
 def generate(environment, demonstrations=100, steps=500):
@@ -40,7 +42,7 @@ def generate(environment, demonstrations=100, steps=500):
     return data
 
 
-def benchmark(agent, environment, data, episodes=100, steps=500, window=20):
+def benchmark(agent, environment, data, episodes=1000, steps=500, window=20):
     """
     Trains an imitation learning agent on a given set of demonstrations then
     allows the agent to interact with the environment itself while its return
@@ -65,9 +67,8 @@ def benchmark(agent, environment, data, episodes=100, steps=500, window=20):
         value = 0
 
         for task in environment.get_tasks():
-            environment.set_task(task)
-            environment.reset()
-            agent.reset(task)
+            environment.reset(task=task)
+            agent.reset(task=task)
             step = 0
 
             while not environment.complete and (step < steps):
@@ -88,13 +89,24 @@ def benchmark(agent, environment, data, episodes=100, steps=500, window=20):
 env = domains.robots.hopper()
 
 actor_fn = models.dense_sigmoid([2] + list(env.action_space.shape), hidden_layers=2, hidden_nodes=128)
+critic_fn = models.dense_sigmoid([1], hidden_layers=2, hidden_nodes=128)
+cost_fn = models.dense_sigmoid([1], hidden_layers=2, hidden_nodes=64)
 
-cloning = imitation.cloning(actor_fn, env.state_space, env.action_space,
-                            learning_rate=0.001,
-                            batch_size=256,
-                            num_batches=1000)
+# cloning = imitation.cloning(actor_fn, env.state_space, env.action_space,
+#                             learning_rate=0.001,
+#                             batch_size=256,
+#                             num_batches=1000)
 
-data = generate(env)
+gail_ppo = imitation.gail_ppo(actor_fn, critic_fn, cost_fn, env.state_space, env.action_space,
+                              discount=0.99,
+                              mixing=0.9,
+                              learning_rate=0.001,
+                              clip_epsilon=0.1,
+                              batch_size=128,
+                              num_batches=50,
+                              num_episodes=5)
 
-with cloning as agent:
+data = generate(env, demonstrations=10)
+
+with gail_ppo as agent:
     benchmark(agent, env, data)

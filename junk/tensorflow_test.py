@@ -5,11 +5,18 @@ import collections
 
 sess = tf.Session()
 
-input = tf.placeholder(dtype=tf.float32, shape=[None])
-var = tf.get_variable("var", dtype=tf.float32, shape=[None], use_resource=True)
-assign = tf.assign(var, input)
+with tf.variable_scope("main"):
 
-sess.run(assign, feed_dict={input: [1., 2., 3.]})
+    with tf.variable_scope("alpha"):
+        alpha_var = tf.Variable(initial_value=tf.random_normal([5]), name="var")
+
+    with tf.variable_scope("beta"):
+        beta_var = tf.Variable(initial_value=tf.random_normal([5]), name="var")
+
+    y = 0.5 * alpha_var
+
+    sess.run(tf.global_variables_initializer())
+    print(sess.run(y))
 
 # input_sequence = tf.placeholder(dtype=tf.float32, shape=[None])
 # sum_sequence = tf.scan(lambda s, x: s + x, input_sequence, 0.0)

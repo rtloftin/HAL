@@ -50,6 +50,14 @@ class Trajectory:
         self.states.append(state)
         self.actions.append(action)
 
+    @property
+    def states(self):
+        return self._states
+
+    @property
+    def actions(self):
+        return self._actions
+
 
 class TaskAgent:
     """
@@ -80,7 +88,6 @@ class TaskAgent:
 
         # Capture instance variables
         self._session = session
-        self._discrete_action = action_space.discrete
         self._data = data
 
         # Build the policy network and learning update graph
@@ -90,49 +97,41 @@ class TaskAgent:
             self._state_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_space.shape))
 
             # Define the discriminator, and the target and hypothesis models for the actor and critic
+            # Define critic
+            with tf.variable_scope("critic"):
+                self._critic = kwargs['critic_fn'](self._state_input)[:, 0]
+
+            # Define target actor
             with tf.variable_scope("target_actor"):
                 target_actor = kwargs['actor_fn'](self._state_input)
+                target_actor_vars = tf.trainable_variables(scope=tf.get_variable_scope().name)
 
+            # Define hypothesis actor
             with tf.variable_scope("hypothesis_actor"):
                 hypothesis_actor = kwargs['actor_fn'](self._state_input)
+                hypothesis_actor_vars = tf.trainable_variables(scope=tf.get_variable_scope().name)
 
-            with tf.variable_scope("target_critic"):
-                target_critic = kwargs['critic_fn'](self._state_input)
-
-            with tf.variable_scope("hypothesis_critic"):
-                hypothesis_critic = kwargs['critic_fn'](self._state_input)
-
-            with tf.variable_scope("discriminator"):
-                discriminator = kwargs['cost_fn'](self._state_input)
-
-            # Define parameter transfer operations
-            target_critic_vars = tf.trainable_variables(scope='target_critic')
-            target_critic_vars = dict(map(lambda x: (x.name[len('target_critic'):], x), target_critic_vars))
-
-            hypothesis_critic_vars = tf.trainable_variables(scope='hypothesis_critic')
-            hypothesis_critic_vars = dict(map(lambda x: (x.name[len('hypothesis_critic'):], x), hypothesis_critic_vars))
-
-            target_actor_vars = tf.trainable_variables(scope='target_actor')
+            # Define actor parameter transfer op
             target_actor_vars = dict(map(lambda x: (x.name[len('target_actor'):], x), target_actor_vars))
-
-            hypothesis_actor_vars = tf.trainable_variables(scope='hypothesis_actor')
             hypothesis_actor_vars = dict(map(lambda x: (x.name[len('hypothesis_actor'):], x), hypothesis_actor_vars))
 
-            self._transfer_critic = []
             self._transfer_actor = []
-
-            for key, var in hypothesis_critic_vars.items():
-                self._transfer_critic.append(tf.assign(target_critic_vars[key], var))
 
             for key, var in hypothesis_actor_vars.items():
                 self._transfer_actor.append(tf.assign(target_actor_vars[key], var))
 
-            # Define action input and policy ratios
+            # Define action input and policy ratios, and discriminator
             if action_space.discrete:
 
                 # Action input
                 self._action_input = tf.placeholder(dtype=tf.int32, shape=[None])
                 one_hot = tf.one_hot(self._action_input, action_space.size)
+
+                # Discriminator
+                with tf.variable_scope("discriminator"):
+                    discriminator = kwargs['cost_fn'](self._state_input)
+
+                discriminator = tf.reduce_sum(one_hot * discriminator, axis=1)
 
                 # Probability ratios
                 target = tf.exp(target_actor)
@@ -150,6 +149,10 @@ class TaskAgent:
                 # Action input
                 self._action_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(action_space.shape))
 
+                # Discriminator
+                with tf.variable_scope("discriminator"):
+                    discriminator = kwargs['cost_fn'](self._state_input)[:, 0]
+
                 # Probability ratios
                 target_mean = target_actor[:, 0]
                 target_deviation = target_actor[:, 1]
@@ -157,30 +160,31 @@ class TaskAgent:
                 hypothesis_mean = hypothesis_actor[:, 0]
                 hypothesis_deviation = hypothesis_actor[:, 1]
 
-                target = tf.square(self._action_input - target_mean) / tf.exp(target_deviation)
-                target = tf.reduce_sum(target + target_deviation, axis=1)
+                target = tf.square((self._action_input - target_mean) / tf.exp(target_deviation))
+                target = tf.reduce_sum((0.5 * target) + target_deviation, axis=1)
 
-                hypothesis = tf.square(self._action_input - hypothesis_mean) / tf.exp(hypothesis_deviation)
-                hypothesis = tf.reduce_sum(hypothesis + hypothesis_deviation, axis=1)
+                hypothesis = tf.square((self._action_input - hypothesis_mean) / tf.exp(hypothesis_deviation))
+                hypothesis = tf.reduce_sum((0.5 * hypothesis) + hypothesis_deviation, axis=1)
 
-                ratio = tf.exp(tf.multiply(tf.stop_gradient(target) - hypothesis, 0.5))
+                ratio = tf.exp(tf.stop_gradient(target) - hypothesis)
 
                 # Action output
                 noise = tf.random_normal(tf.shape(target_mean))
-                self._action = target_mean + (noise * tf.exp(tf.multiply(target_deviation, 0.5)))
+                self._action = target_mean + (noise * tf.exp(target_deviation))
 
             # Discriminator update
-            self._expert = tf.placeholder(dtype=tf.float32, shape=[None])
-            self.cost = tf.log(discriminator)
+            self._expert_input = tf.placeholder(dtype=tf.float32, shape=[None])
+            self._cost = -tf.log(1.0 + tf.exp(-discriminator))
 
-            loss = tf.reduce_sum((1.0 - self._expert) * self._cost + self._expert * tf.log(1.0 - discriminator))
+            loss = self._expert_input * tf.log(1.0 + tf.exp(discriminator)) - (1.0 - self._expert_input) * self._cost
+            loss = tf.reduce_sum(loss)
+
             self._discriminator_update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
 
             # Critic update
-            self._critic = target_critic
             self._value_input = tf.placeholder(dtype=tf.float32, shape=[None])
 
-            loss = tf.reduce_mean(tf.square(self._value_input - hypothesis_critic))
+            loss = tf.reduce_mean(tf.square(self._value_input - self._critic))
             self._critic_update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
 
             # Actor update
@@ -191,114 +195,80 @@ class TaskAgent:
 
             self._actor_update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
 
-            # Initializer
-            self._initialize = tf.variables_initializer(tf.global_variables())
+            # Variable assertion
+            self._is_finite = []
+            self._is_inf = []
+            self._is_nan = []
+
+            for var in tf.trainable_variables(scope=tf.get_variable_scope().name):
+                self._is_finite.append(tf.reduce_all(tf.debugging.is_finite(var)))
+                self._is_inf.append(tf.reduce_any(tf.debugging.is_inf(var)))
+                self._is_nan.append(tf.reduce_any(tf.debugging.is_nan(var)))
+
+            self._is_finite = tf.reduce_all(tf.stack(self._is_finite))
+            self._is_inf = tf.reduce_any(tf.stack(self._is_inf))
+            self._is_nan = tf.reduce_any(tf.stack(self._is_nan))
+
+            # Initialize the model
+            self._session.run(tf.variables_initializer(tf.global_variables(scope=tf.get_variable_scope().name)))
 
         # Initialize internal state
         self._trajectories = []
         self._trajectory = None
         self._episode_count = 0
 
-    def _update_critic(self):
-        """
-        Updates the critic to estimate the value of the current policy.  Only updates the target network
-        once, that is, it only does one round of value iteration, but multiple gradient steps.  Uses a random
-        sample of states for each critic update
-
-        The way the critic update is currently defined, the target network seems to be unnecessary.
-        """
-
-        samples = []
-
-        for trajectory in self._trajectories:
-            critic = self._session.run(self._critic, feed_dict={self._state_input: trajectory.states})
-
-            value = trajectory.rewards[-1]
-            samples.append(Sample(trajectory.states[-1], trajectory.actions[-1], value))
-
-            for t in reversed(range(len(trajectory) - 1)):
-                value *= self._discount * self._mixing
-                value += trajectory.rewards[t] + ((1.0 - self._mixing) * self._discount * critic[t + 1, 0])
-                samples.append(Sample(trajectory.states[t], trajectory.actions[t], value))
-
-        for _ in range(self._num_batches):
-            batch = np.random.choice(samples, self._batch_size, replace=False)
-            states = []
-            values = []
-
-            for sample in batch:
-                states.append(sample.state)
-                values.append(sample.value)
-
-                self._session.run(self._critic_update, feed_dict={
-                    self._state_input: states,
-                    self._value_input: values
-                })
-
-        self._session.run(self._transfer_critic)
-
-    def _update_discriminator(self):
-        """
-        Updates the discriminator based on recent experience
-        """
-
-        samples = []
-
-        for trajectory in self._trajectories:
-            samples.extend(trajectory.states)
-
-        for _ in range(self._num_batches):
-            states = []
-            expert = []
-
-            # Agent batch
-            batch = np.random.choice(samples, self._batch_size, replace=False)
-
-            for state in batch:
-                states.append(state)
-                expert.append(0.0)
-
-            # Expert batch
-            batch = np.random.choice(self._data, self._batch_size, replace=False)
-
-            for sample in batch:
-                states.append(sample.state)
-                expert.append(1.0)
-
-            self._session.run(self._discriminator_update, feed_dict={
-                self._state_input: states,
-                self._expert: expert
-            })
-
     def _update(self):
         """
         Updates the agent's policy based on recent experience.
-
-        Right now we pass every state through the critic, but this may
-        end up being too computationally expensive.
-
-        WE NEED TO ORGANIZE THIS BETTER, RIGHT NOW WE ARE DOING A LOT OF STUPID THINGS
         """
 
         # Update discriminator
-        self._update_discriminator()
+        samples = []
+
+        for trajectory in self._trajectories:
+            for t in range(len(trajectory)):
+                samples.append(Sample(trajectory.states[t], trajectory.actions[t], 0.0))
+
+        for _ in range(self._num_batches):
+            expert_batch = np.random.choice(self._data, self._batch_size, replace=True)
+            agent_batch = np.random.choice(samples, self._batch_size, replace=True)
+            states = []
+            actions = []
+            expert = []
+
+            for sample in expert_batch:
+                states.append(sample.state)
+                actions.append(sample.action)
+                expert.append(1.0)
+
+            for sample in agent_batch:
+                states.append(sample.state)
+                actions.append(sample.action)
+                expert.append(0.0)
+
+            self._session.run(self._discriminator_update, feed_dict={
+                self._state_input: states,
+                self._action_input: actions,
+                self._expert_input: expert
+            })
 
         # Update critic
         samples = []
 
         for trajectory in self._trajectories:
-            critic = self._session.run(self._critic, feed_dict={self._state_input: trajectory.states})
+            values, costs = self._session.run([self._critic, self._cost], feed_dict={
+                self._state_input: trajectory.states,
+                self._action_input: trajectory.actions
+            })
+            acc = 0.0
 
-            value = trajectory.rewards[-1]
-            samples.append(Sample(trajectory.states[-1], trajectory.actions[-1], value))
-
-            for t in reversed(range(len(trajectory) - 1)):
-                value *= self._discount * self._mixing
-                value += trajectory.rewards[t] + ((1.0 - self._mixing) * self._discount * critic[t + 1, 0])
+            for t in reversed(range(len(trajectory))):
+                value = acc - costs[t]
+                acc = self._discount * (((1.0 - self._mixing) * values[t]) + (self._mixing * value))
                 samples.append(Sample(trajectory.states[t], trajectory.actions[t], value))
 
         for _ in range(self._num_batches):
-            batch = np.random.choice(samples, self._batch_size, replace=False)
+            batch = np.random.choice(samples, self._batch_size, replace=True)
             states = []
             values = []
 
@@ -306,34 +276,29 @@ class TaskAgent:
                 states.append(sample.state)
                 values.append(sample.value)
 
-                self._session.run(self._critic_update, feed_dict={
-                    self._state_input: states,
-                    self._value_input: values
-                })
-
-        self._session.run(self._transfer_critic)
+            self._session.run(self._critic_update, feed_dict={
+                self._state_input: states,
+                self._value_input: values
+            })
 
         # Update actor
-
-        # Compute advantages
         samples = []
 
         for trajectory in self._trajectories:
-            critic = self._session.run(self._critic, feed_dict={self._state_input: trajectory.states})
+            values, costs = self._session.run([self._critic, self._cost], feed_dict={
+                self._state_input: trajectory.states,
+                self._action_input: trajectory.actions
+            })
+            acc = 0.0
 
-            value = trajectory.rewards[-1]
-            samples.append(Sample(trajectory.states[-1], trajectory.actions[-1], value))
+            for t in reversed(range(len(trajectory))):
+                value = acc - costs[t]
+                acc = self._discount * (((1.0 - self._mixing) * values[t]) + (self._mixing * value))
+                samples.append(Sample(trajectory.states[t], trajectory.actions[t], value - values[t]))
 
-            for t in reversed(range(len(trajectory) - 1)):
-                value *= self._discount * self._mixing
-                value += trajectory.rewards[t] + (self._discount * critic[t + 1, 0]) - critic[t, 0]
-                samples.append(Sample(trajectory.states[t], trajectory.actions[t], value))
-
-        # Update actor
         for _ in range(self._num_batches):
 
-            # Construct batch
-            batch = np.random.choice(samples, self._batch_size, replace=False)
+            batch = np.random.choice(samples, self._batch_size, replace=True)
             states = []
             actions = []
             advantages = []
@@ -343,7 +308,6 @@ class TaskAgent:
                 actions.append(sample.action)
                 advantages.append(sample.value)
 
-            # Run update
             self._session.run(self._actor_update, feed_dict={
                 self._state_input: states,
                 self._action_input: actions,
@@ -353,8 +317,12 @@ class TaskAgent:
         # Transfer parameters
         self._session.run(self._transfer_actor)
 
-        # Clear experience data
-        self._trajectories = []
+        # Validate parameters
+        if not self._session.run(self._is_finite):
+            if self._session.run(self._is_inf):
+                print("At least one parameter became infinite")
+            if self._session.run(self._is_nan):
+                print("At least one parameter became NaN")
 
     def reset(self):
         """
@@ -395,7 +363,7 @@ class Agent:
     A multi-task GAIL agent.
     """
 
-    def __init__(self, graph, session, kwargs):
+    def __init__(self, graph, session, **kwargs):
         """
         Initializes the agent.  Just initializes the dictionary of
         task models and the TensorFlow graph and session.
@@ -422,18 +390,6 @@ class Agent:
         for task in data.tasks():
             self._tasks[task] = TaskAgent(data.steps(task), self._graph, self._session, self._kwargs)
 
-    def set_task(self, name):
-        """
-        Sets the task that the agent is currently learning to perform.
-
-        :param name: the name of the task
-        """
-
-        if name not in self._tasks:
-            self._tasks[name] = TaskAgent(self._graph, self._session, self._kwargs)
-
-        self._current = self._tasks[name]
-
     def reset(self, task=None):
         """
         Indicates to the agent that a new episode has started, that is
@@ -444,7 +400,9 @@ class Agent:
         """
 
         if task is not None:
-            self.set_task(task)
+            self._current = self._tasks[task]
+
+        self._current.reset()
 
     def act(self, state, evaluation=False):
         """

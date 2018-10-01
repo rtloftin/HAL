@@ -164,17 +164,17 @@ class Agent:
                 hypothesis_mean = hypothesis_actor[:, 0]
                 hypothesis_deviation = hypothesis_actor[:, 1]
 
-                target = tf.square(self._action_input - target_mean) / tf.exp(target_deviation)
-                target = tf.reduce_sum(target + target_deviation, axis=1)
+                target = tf.square((self._action_input - target_mean) / tf.exp(target_deviation))
+                target = tf.reduce_sum((0.5 * target) + target_deviation, axis=1)
 
-                hypothesis = tf.square(self._action_input - hypothesis_mean) / tf.exp(hypothesis_deviation)
-                hypothesis = tf.reduce_sum(hypothesis + hypothesis_deviation, axis=1)
+                hypothesis = tf.square((self._action_input - hypothesis_mean) / tf.exp(hypothesis_deviation))
+                hypothesis = tf.reduce_sum((0.5 * hypothesis) + hypothesis_deviation, axis=1)
 
-                ratio = tf.exp(tf.multiply(tf.stop_gradient(target) - hypothesis, 0.5))
+                ratio = tf.exp(tf.stop_gradient(target) - hypothesis)
 
                 # Action output
                 noise = tf.random_normal(tf.shape(target_mean))
-                self._action = target_mean + (noise * tf.exp(tf.multiply(target_deviation, 0.5)))
+                self._action = target_mean + (noise * tf.exp(target_deviation))
 
             # Critic update
             self._value_input = tf.placeholder(dtype=tf.float32, shape=[None])
@@ -191,7 +191,7 @@ class Agent:
             self._actor_update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
 
             # Initialize variables
-            session.run(tf.variables_initializer(tf.global_variables()))
+            session.run(tf.global_variables_initializer())
 
         # Initialize internal state
         self._trajectories = []
@@ -246,7 +246,7 @@ class Agent:
         for _ in range(self._num_batches):
 
             # Construct batch
-            batch = np.random.choice(samples, self._batch_size, replace=False)
+            batch = np.random.choice(samples, self._batch_size, replace=True)
             states = []
             actions = []
             advantages = []

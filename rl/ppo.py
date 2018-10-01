@@ -140,16 +140,16 @@ class Agent:
                 hypothesis_mean = hypothesis_output[:, 0]
                 hypothesis_deviation = hypothesis_output[:, 1]
 
-                policy = tf.square(self._action_input - policy_mean) / tf.exp(policy_deviation)
-                policy = tf.reduce_sum(policy + policy_deviation, axis=1)
+                policy = tf.square((self._action_input - policy_mean) / tf.exp(policy_deviation))
+                policy = tf.reduce_sum((0.5 * policy) + policy_deviation, axis=1)
 
-                hypothesis = tf.square(self._action_input - hypothesis_mean) / tf.exp(hypothesis_deviation)
-                hypothesis = tf.reduce_sum(hypothesis + hypothesis_deviation, axis=1)
+                hypothesis = tf.square((self._action_input - hypothesis_mean) / tf.exp(hypothesis_deviation))
+                hypothesis = tf.reduce_sum((0.5 * hypothesis) + hypothesis_deviation, axis=1)
 
-                ratio = tf.exp(tf.multiply(tf.stop_gradient(policy) - hypothesis, 0.5))
+                ratio = tf.exp(tf.stop_gradient(policy) - hypothesis)
 
                 noise = tf.random_normal(tf.shape(policy_mean))
-                self._action = policy_mean + (noise * tf.exp(tf.multiply(policy_deviation, 0.5)))
+                self._action = policy_mean + (noise * tf.exp(policy_deviation))
 
             self._advantage_input = tf.placeholder(dtype=tf.float32, shape=[None])
 
