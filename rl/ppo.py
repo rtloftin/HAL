@@ -12,15 +12,17 @@ import roboschool
 
 class Sample:
     """
-    Represents a state-action sample.
+    Represents an arbitrary state-action sample.  Mainly to overcome the
+    issue with Numpy treating arrays of tuples as two-dimensional arrays.
     """
 
-    def __init__(self, state, action, value=0.0):
+    def __init__(self, state, action, value):
         """
         Initializes the sample.
 
-        :param state: the current state
+        :param state: the state
         :param action: the action taken
+        :param value: the value of the sample
         """
 
         self.state = state
@@ -34,11 +36,12 @@ class Trajectory:
     """
 
     def __init__(self):
-        self._steps = []
-        self._current = None
+        self._states = []
+        self._actions = []
+        self._rewards = []
 
     def __len__(self):
-        return len(self._steps)
+        return len(self._states)
 
     def step(self, state, action):
         """
@@ -48,8 +51,9 @@ class Trajectory:
         :param action: the action
         """
 
-        self._current = Sample(state, action)
-        self._steps.append(self._current)
+        self._states.append(state)
+        self._actions.append(action)
+        self._rewards.append(0.0)
 
     def reward(self, reward):
         """
@@ -58,25 +62,20 @@ class Trajectory:
         :param reward: the immediate reward
         """
 
-        if self._current is not None:
-            self._current.value += reward
+        if len(self._rewards) != 0:
+            self._rewards[-1] += reward
 
-    def accumulate(self, discount):
-        """
-        Calculates the advantage value for each time step.
+    @property
+    def states(self):
+        return self._states
 
-        :param discount: the discount factor
-        :return: a list of tuples of (state, action, advantage)
-        """
+    @property
+    def actions(self):
+        return self._actions
 
-        samples = []
-        advantage = 0
-
-        for step in reversed(self._steps):
-            advantage = step.value + (discount * advantage)
-            samples.append(Sample(step.state, step.action, value=advantage))
-
-        return samples
+    @property
+    def rewards(self):
+        return self._rewards
 
 
 class Agent:
@@ -85,10 +84,12 @@ class Agent:
     using a version of the PPO algorithm.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, graph, session, **kwargs):
         """
         Initializes a new PPO agent.
 
+        :param graph: the Tensorflow graph to be used
+        :param session: the Tensorflow session to be used
         :param kwargs: the configuration options for the agent
         """
 
@@ -103,19 +104,18 @@ class Agent:
         self._num_batches = kwargs['num_batches']
         self._num_episodes = kwargs['num_episodes']
 
-        # Create graph and the session placeholder
-        self._graph = tf.Graph()
-        self._session = None
+        # Capture session
+        self._session = session
 
         # Build the policy network and learning update graph
-        with self._graph.as_default():
+        with graph.as_default():
             self._state_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_space.shape))
 
             with tf.variable_scope("policy"):
-                policy_output = kwargs['model_fn'](self._state_input)
+                policy_output = kwargs['actor_fn'](self._state_input)
 
             with tf.variable_scope("hypothesis"):
-                hypothesis_output = kwargs['model_fn'](self._state_input)
+                hypothesis_output = kwargs['actor_fn'](self._state_input)
 
             if action_space.discrete:
                 self._action_input = tf.placeholder(dtype=tf.int32, shape=[None])
@@ -169,48 +169,34 @@ class Agent:
             for key, var in hypothesis_variables.items():
                 self._transfer_hypothesis.append(tf.assign(policy_variables[key], var))
 
-            self._initialize = tf.variables_initializer(tf.global_variables())
+            session.run(tf.variables_initializer(tf.global_variables()))
 
-        self._data = []
+        self._trajectories = []
         self._trajectory = None
         self._episode_count = 0
 
-    def __enter__(self):
-        """
-        Defines the TensorFlow session that this agent will
-        use, and initializes the model parameters.
-
-        :return: the agent itself
-        """
-        self._session = tf.Session(graph=self._graph)
-        self._session.run(self._initialize)
-        self._session.run(self._transfer_hypothesis)
         self.reset()
-
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """
-        Releases the agent's TensorFlow session
-
-        :param exc_type: ignored
-        :param exc_val: ignored
-        :param exc_tb: ignored
-        :return: always false, do not suppress exceptions
-        """
-
-        self._session.close()
 
     def _update(self):
         """
         Updates the agent's policy based on recent experience.
         """
 
+        # Compute advantages
+        samples = []
+
+        for trajectory in self._trajectories:
+            advantage = 0.0
+
+            for t in reversed(range(len(trajectory))):
+                advantage += trajectory.rewards[t] + (self._discount * advantage)
+                samples.append(Sample(trajectory.states[t], trajectory.actions[t], advantage))
+
         # Perform updates
         for _ in range(self._num_batches):
 
             # Construct batch
-            batch = np.random.choice(self._data, self._batch_size, replace=False)
+            batch = np.random.choice(samples, self._batch_size, replace=True)
             states = []
             actions = []
             advantages = []
@@ -230,9 +216,6 @@ class Agent:
         # Transfer parameters
         self._session.run(self._transfer_hypothesis)
 
-        # Clear experience data
-        self._data = []
-
     def reset(self):
         """
         Tells the agent that a new episode has been started, the agent may
@@ -240,14 +223,15 @@ class Agent:
         """
 
         if self._trajectory is not None and len(self._trajectory) != 0:
-            self._data.extend(self._trajectory.accumulate(self._discount))
+            self._trajectories.append(self._trajectory)
             self._episode_count += 1
-
-        self._trajectory = Trajectory()
 
         if self._episode_count == self._num_episodes:
             self._update()
+            self._trajectories = []
             self._episode_count = 0
+
+        self._trajectory = Trajectory()
 
     def act(self, state, evaluation=False):
         """
@@ -275,26 +259,19 @@ class Agent:
 
         self._trajectory.reward(reward)
 
-    def close(self):
-        """
-        Closes the Tensorflow session associated with this agent.
-        """
 
-        self._session.close()
-
-
-def build(model_fn, state_space, action_space,
-          discount=0.99,
-          learning_rate=0.0005,
-          clip_epsilon=0.05,
-          batch_size=50,
-          num_batches=20,
-          num_episodes=10):
+def manager(actor_fn, state_space, action_space,
+            discount=0.99,
+            learning_rate=0.0005,
+            clip_epsilon=0.05,
+            batch_size=50,
+            num_batches=20,
+            num_episodes=10):
     """
-    Builds a new PPO reinforcement learning agent.  We may want to get
-    rid of the keyword arguments dictionary altogether.
+    Returns a context manager which is used to instantiate and clean up
+    a PPO reinforcement learning agent with the given configuration.
 
-    :param model_fn: the function used to build the model graphs
+    :param actor_fn: the function used to build the policy graphs
     :param state_space: the number of state features
     :param action_space: the number of actions or action features
     :param discount: the discount factor of the MDP
@@ -303,15 +280,40 @@ def build(model_fn, state_space, action_space,
     :param batch_size: the batch size used for training the policies
     :param num_batches: the number of gradient steps to do per update
     :param num_episodes: the number of episodes performed between updates
-    :return: a new PPO reinforcement learning agent
+    :return: a context manager which creates a new PPO agent
     """
 
-    return Agent(model_fn=model_fn,
-                 state_space=state_space,
-                 action_space=action_space,
-                 discount=discount,
-                 learning_rate=learning_rate,
-                 clip_epsilon=clip_epsilon,
-                 batch_size=batch_size,
-                 num_batches=num_batches,
-                 num_episodes=num_episodes)
+    class Manager:
+
+        def __enter__(self):
+            self._graph = tf.Graph()
+            self._session = tf.Session(graph=self._graph)
+
+            return Agent(self._graph, self._session,
+                         actor_fn=actor_fn,
+                         state_space=state_space,
+                         action_space=action_space,
+                         discount=discount,
+                         learning_rate=learning_rate,
+                         clip_epsilon=clip_epsilon,
+                         batch_size=batch_size,
+                         num_batches=num_batches,
+                         num_episodes=num_episodes)
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            """
+            Closes the session associated with the current agent.
+
+            :param exc_type: ignored
+            :param exc_val: ignored
+            :param exc_tb: ignored
+            :return: always False, never suppress exceptions
+            """
+
+            self._session.close()
+            self._session = None
+            self._graph = None
+
+            return False
+
+    return Manager()

@@ -82,7 +82,7 @@ class Agent:
     using a version of the PPO algorithm.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, graph, session, **kwargs):
         """
         Initializes a new PPO agent.
 
@@ -101,47 +101,35 @@ class Agent:
         self._num_batches = kwargs['num_batches']
         self._num_episodes = kwargs['num_episodes']
 
-        # Create graph and session
-        self._graph = tf.Graph()
-        self._session = None
+        # Capture the session
+        self._session = session
 
         # Build the policy network and learning update graph
-        with self._graph.as_default():
+        with graph.as_default():
 
             # Define common state input
             self._state_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_space.shape))
 
-            # Define target and hypothesis models for the actor and critic
-            with tf.variable_scope("target_critic"):
-                target_critic = kwargs['critic_fn'](self._state_input)
+            # Define critic
+            with tf.variable_scope("critic"):
+                self._critic = kwargs['critic_fn'](self._state_input)[:, 0]
 
-            with tf.variable_scope("hypothesis_critic"):
-                hypothesis_critic = kwargs['critic_fn'](self._state_input)
-
+            # Define target actor
             with tf.variable_scope("target_actor"):
                 target_actor = kwargs['actor_fn'](self._state_input)
 
+            # Define hypothesis actor
             with tf.variable_scope("hypothesis_actor"):
                 hypothesis_actor = kwargs['actor_fn'](self._state_input)
 
-            # Define parameter transfer operations
-            target_critic_vars = tf.trainable_variables(scope='target_critic')
-            target_critic_vars = dict(map(lambda x: (x.name[len('target_critic'):], x), target_critic_vars))
-
-            hypothesis_critic_vars = tf.trainable_variables(scope='hypothesis_critic')
-            hypothesis_critic_vars = dict(map(lambda x: (x.name[len('hypothesis_critic'):], x), hypothesis_critic_vars))
-
+            # Define critic parameter transfer op
             target_actor_vars = tf.trainable_variables(scope='target_actor')
             target_actor_vars = dict(map(lambda x: (x.name[len('target_actor'):], x), target_actor_vars))
 
             hypothesis_actor_vars = tf.trainable_variables(scope='hypothesis_actor')
             hypothesis_actor_vars = dict(map(lambda x: (x.name[len('hypothesis_actor'):], x), hypothesis_actor_vars))
 
-            self._transfer_critic = []
             self._transfer_actor = []
-
-            for key, var in hypothesis_critic_vars.items():
-                self._transfer_critic.append(tf.assign(target_critic_vars[key], var))
 
             for key, var in hypothesis_actor_vars.items():
                 self._transfer_actor.append(tf.assign(target_actor_vars[key], var))
@@ -189,10 +177,9 @@ class Agent:
                 self._action = target_mean + (noise * tf.exp(tf.multiply(target_deviation, 0.5)))
 
             # Critic update
-            self._critic = target_critic
             self._value_input = tf.placeholder(dtype=tf.float32, shape=[None])
 
-            loss = tf.reduce_mean(tf.square(self._value_input - hypothesis_critic))
+            loss = tf.reduce_mean(tf.square(self._value_input - self._critic))
             self._critic_update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
 
             # Actor update
@@ -203,100 +190,35 @@ class Agent:
 
             self._actor_update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
 
-            # Initializer
-            self._initialize = tf.variables_initializer(tf.global_variables())
+            # Initialize variables
+            session.run(tf.variables_initializer(tf.global_variables()))
 
         # Initialize internal state
         self._trajectories = []
         self._trajectory = None
         self._episode_count = 0
 
-    def __enter__(self):
-        """
-        Defines the TensorFlow session that this agent will
-        use, and initializes the model parameters.
-
-        :return: the agent itself
-        """
-        self._session = tf.Session(graph=self._graph)
-        self._session.run(self._initialize)
-        self._session.run(self._transfer_critic)
-        self._session.run(self._transfer_actor)
         self.reset()
 
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def _update(self):
         """
-        Releases the agent's TensorFlow session
-
-        :param exc_type: ignored
-        :param exc_val: ignored
-        :param exc_tb: ignored
-        :return: always false, do not suppress exceptions
+        Updates the agent's policy based on recent experience.
         """
 
-        self._session.close()
-
-    def _update_critic_full(self):
-        """
-        Updates the critic to estimate the value of the current policy.  Only updates the target network
-        once, that is, it only does one round of value iteration, but multiple gradient steps.  Uses all the
-        data at each gradient update.
-
-        The way the critic update is currently defined, the target network seems to be unnecessary.
-        """
-
-        states = []
-        estimates = []
-
-        for trajectory in self._trajectories:
-            critic = self._session.run(self._critic, feed_dict={self._state_input: trajectory.states})
-            values = np.empty([len(trajectory)])
-
-            value = trajectory.rewards[-1]
-            values[-1] = value
-
-            for t in reversed(range(len(trajectory) - 1)):
-                value *= self._discount * self._mixing
-                value += trajectory.rewards[t] + ((1.0 - self._mixing) * self._discount * critic[t + 1, 0])
-                values[t] = value
-
-            states.extend(trajectory.states)
-            estimates.extend(values)
-
-        for _ in range(self._num_batches):
-            self._session.run(self._critic_update, feed_dict={
-                self._state_input: states,
-                self._value_input: values
-            })
-
-        self._session.run(self._transfer_critic)
-
-    def _update_critic_batch(self):
-        """
-        Updates the critic to estimate the value of the current policy.  Only updates the target network
-        once, that is, it only does one round of value iteration, but multiple gradient steps.  Uses a random
-        sample of states for each critic update
-
-        The way the critic update is currently defined, the target network seems to be unnecessary.
-        """
-
+        # Update critic
         samples = []
 
         for trajectory in self._trajectories:
-            critic = self._session.run(self._critic, feed_dict={self._state_input: trajectory.states})
+            values = self._session.run(self._critic, feed_dict={self._state_input: trajectory.states})
+            acc = 0.0
 
-            value = trajectory.rewards[-1]
-            samples.append(Sample(trajectory.states[-1], trajectory.actions[-1], value))
-
-            for t in reversed(range(len(trajectory) - 1)):
-                value *= self._discount * self._mixing
-                value += trajectory.rewards[t] + ((1.0 - self._mixing) * self._discount * critic[t + 1, 0])
+            for t in reversed(range(len(trajectory))):
+                value = trajectory.rewards[t] + acc
+                acc = self._discount * (((1.0 - self._mixing) * values[t]) + (self._mixing * value))
                 samples.append(Sample(trajectory.states[t], trajectory.actions[t], value))
 
         for _ in range(self._num_batches):
-            batch = np.random.choice(samples, self._batch_size, replace=False)
+            batch = np.random.choice(samples, self._batch_size, replace=True)
             states = []
             values = []
 
@@ -304,38 +226,23 @@ class Agent:
                 states.append(sample.state)
                 values.append(sample.value)
 
-                self._session.run(self._critic_update, feed_dict={
-                    self._state_input: states,
-                    self._value_input: values
-                })
+            self._session.run(self._critic_update, feed_dict={
+                self._state_input: states,
+                self._value_input: values
+            })
 
-        self._session.run(self._transfer_critic)
-
-    def _update(self):
-        """
-        Updates the agent's policy based on recent experience.
-
-        Right now we pass every state through the critic, but this may
-        end up being too computationally expensive.
-        """
-
-        self._update_critic_full()
-
-        # Compute advantages
+        # Update actor
         samples = []
 
         for trajectory in self._trajectories:
-            critic = self._session.run(self._critic, feed_dict={self._state_input: trajectory.states})
+            values = self._session.run(self._critic, feed_dict={self._state_input: trajectory.states})
+            acc = 0.0
 
-            value = trajectory.rewards[-1]
-            samples.append(Sample(trajectory.states[-1], trajectory.actions[-1], value))
+            for t in reversed(range(len(trajectory))):
+                value = trajectory.rewards[t] + acc
+                acc = self._discount * (((1.0 - self._mixing) * values[t]) + (self._mixing * value))
+                samples.append(Sample(trajectory.states[t], trajectory.actions[t], value - values[t]))
 
-            for t in reversed(range(len(trajectory) - 1)):
-                value *= self._discount * self._mixing
-                value += trajectory.rewards[t] + (self._discount * critic[t + 1, 0]) - critic[t, 0]
-                samples.append(Sample(trajectory.states[t], trajectory.actions[t], value))
-
-        # Update actor
         for _ in range(self._num_batches):
 
             # Construct batch
@@ -359,9 +266,6 @@ class Agent:
         # Transfer parameters
         self._session.run(self._transfer_actor)
 
-        # Clear experience data
-        self._trajectories = []
-
     def reset(self):
         """
         Tells the agent that a new episode has been started, the agent may
@@ -374,6 +278,7 @@ class Agent:
 
         if self._episode_count == self._num_episodes:
             self._update()
+            self._trajectories = []
             self._episode_count = 0
 
         self._trajectory = Trajectory()
@@ -404,25 +309,18 @@ class Agent:
 
         self._trajectory.reward(reward)
 
-    def close(self):
-        """
-        Closes the Tensorflow session associated with this agent.
-        """
 
-        self._session.close()
-
-
-def build(actor_fn, critic_fn, state_space, action_space,
-          discount=0.99,
-          mixing=0.9,
-          learning_rate=0.0005,
-          clip_epsilon=0.05,
-          batch_size=50,
-          num_batches=20,
-          num_episodes=10):
+def manager(actor_fn, critic_fn, state_space, action_space,
+            discount=0.99,
+            mixing=0.9,
+            learning_rate=0.0005,
+            clip_epsilon=0.05,
+            batch_size=50,
+            num_batches=20,
+            num_episodes=10):
     """
-    Builds a new PPO reinforcement learning agent.  We may want to get
-    rid of the keyword arguments dictionary altogether.
+    Returns a context manager which is used to instantiate and clean up
+    an actor-critic PPO agent.
 
     :param actor_fn: the function used to build the actor graphs
     :param critic_fn: the function used to build the critic graphs
@@ -435,17 +333,42 @@ def build(actor_fn, critic_fn, state_space, action_space,
     :param batch_size: the batch size used for training the policies
     :param num_batches: the number of gradient steps to do per update
     :param num_episodes: the number of episodes performed between updates
-    :return: a new PPO reinforcement learning agent
+    :return: a context manager which creates a new PPO agent
     """
 
-    return Agent(actor_fn=actor_fn,
-                 critic_fn=critic_fn,
-                 state_space=state_space,
-                 action_space=action_space,
-                 discount=discount,
-                 mixing=mixing,
-                 learning_rate=learning_rate,
-                 clip_epsilon=clip_epsilon,
-                 batch_size=batch_size,
-                 num_batches=num_batches,
-                 num_episodes=num_episodes)
+    class Manager:
+
+        def __enter__(self):
+            self._graph = tf.Graph()
+            self._session = tf.Session(graph=self._graph)
+
+            return Agent(self._graph, self._session,
+                         actor_fn=actor_fn,
+                         critic_fn=critic_fn,
+                         state_space=state_space,
+                         action_space=action_space,
+                         discount=discount,
+                         mixing=mixing,
+                         learning_rate=learning_rate,
+                         clip_epsilon=clip_epsilon,
+                         batch_size=batch_size,
+                         num_batches=num_batches,
+                         num_episodes=num_episodes)
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            """
+            Closes the session associated with the current agent.
+
+            :param exc_type: ignored
+            :param exc_val: ignored
+            :param exc_tb: ignored
+            :return: always False, never suppress exceptions
+            """
+
+            self._session.close()
+            self._session = None
+            self._graph = None
+
+            return False
+
+    return Manager()

@@ -87,15 +87,14 @@ def benchmark(agent, environment, data, episodes=100, steps=500, window=20):
 # env = domains.robots.ant()
 env = domains.robots.hopper()
 
-actor_fn = models.dense_sigmoid(env.state_space.shape, [2] + list(env.action_space.shape),
-                                hidden_layers=2, hidden_nodes=128)
+actor_fn = models.dense_sigmoid([2] + list(env.action_space.shape), hidden_layers=2, hidden_nodes=128)
 
-build_agent = imitation.cloning(actor_fn, env.state_space, env.action_space,
-                                learning_rate=0.001,
-                                batch_size=256,
-                                num_batches=1000)
+cloning = imitation.cloning(actor_fn, env.state_space, env.action_space,
+                            learning_rate=0.001,
+                            batch_size=256,
+                            num_batches=1000)
 
 data = generate(env)
 
-with build_agent as agent:
+with cloning as agent:
     benchmark(agent, env, data)
