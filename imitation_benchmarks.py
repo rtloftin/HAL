@@ -98,13 +98,14 @@ cost_fn = models.dense_sigmoid([1], hidden_layers=2, hidden_nodes=64)
 #                             num_batches=1000)
 
 gail_ppo = imitation.gail_ppo(actor_fn, critic_fn, cost_fn, env.state_space, env.action_space,
+                              penalty=0.0,
                               discount=0.99,
                               mixing=0.9,
                               learning_rate=0.001,
                               clip_epsilon=0.1,
                               batch_size=128,
-                              num_batches=50,
-                              num_episodes=5)
+                              num_batches=1,
+                              num_episodes=1)
 
 data = generate(env, demonstrations=10)
 

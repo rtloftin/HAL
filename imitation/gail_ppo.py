@@ -142,6 +142,9 @@ class TaskAgent:
 
                 ratio = hypothesis / tf.stop_gradient(target)
 
+                # Causal entropy
+                entropy = -tf.log(hypothesis)
+
                 # Action output
                 self._action = tf.multinomial(policy_output, 1)
             else:
@@ -168,16 +171,19 @@ class TaskAgent:
 
                 ratio = tf.exp(tf.stop_gradient(target) - hypothesis)
 
+                # Causal entropy
+                entropy = hypothesis
+
                 # Action output
                 noise = tf.random_normal(tf.shape(target_mean))
-                self._action = target_mean + (noise * tf.exp(target_deviation))
+                self._action = target_mean + (noise * tf.square(target_deviation))
 
             # Discriminator update
             self._expert_input = tf.placeholder(dtype=tf.float32, shape=[None])
             self._cost = -tf.log(1.0 + tf.exp(-discriminator))
 
             loss = self._expert_input * tf.log(1.0 + tf.exp(discriminator)) - (1.0 - self._expert_input) * self._cost
-            loss = tf.reduce_sum(loss)
+            loss = tf.reduce_mean(loss)
 
             self._discriminator_update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
 
@@ -190,27 +196,18 @@ class TaskAgent:
             # Actor update
             self._advantage_input = tf.placeholder(dtype=tf.float32, shape=[None])
 
-            clipped_ratio = tf.clip_by_value(ratio, 1.0 - kwargs['clip_epsilon'], 1.0 + kwargs['clip_epsilon'])
-            loss = -tf.reduce_mean(tf.minimum(ratio * self._advantage_input, clipped_ratio * self._advantage_input))
+            clipped = tf.clip_by_value(ratio, 1.0 - kwargs['clip_epsilon'], 1.0 + kwargs['clip_epsilon'])
+            clipped = tf.minimum(ratio * self._advantage_input, clipped * self._advantage_input)
+            loss = -tf.reduce_mean(clipped + (kwargs['penalty'] * entropy))
 
             self._actor_update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
-
-            # Variable assertion
-            self._is_finite = []
-            self._is_inf = []
-            self._is_nan = []
-
-            for var in tf.trainable_variables(scope=tf.get_variable_scope().name):
-                self._is_finite.append(tf.reduce_all(tf.debugging.is_finite(var)))
-                self._is_inf.append(tf.reduce_any(tf.debugging.is_inf(var)))
-                self._is_nan.append(tf.reduce_any(tf.debugging.is_nan(var)))
-
-            self._is_finite = tf.reduce_all(tf.stack(self._is_finite))
-            self._is_inf = tf.reduce_any(tf.stack(self._is_inf))
-            self._is_nan = tf.reduce_any(tf.stack(self._is_nan))
+            self._actor_update = tf.group(self._actor_update,
+                                          tf.Assert(tf.debugging.is_finite(loss),
+                                                    [loss, target, hypothesis],
+                                                    name="actor_assertion"))
 
             # Initialize the model
-            self._session.run(tf.variables_initializer(tf.global_variables(scope=tf.get_variable_scope().name)))
+            session.run(tf.variables_initializer(tf.global_variables(scope=tf.get_variable_scope().name)))
 
         # Initialize internal state
         self._trajectories = []
@@ -317,13 +314,6 @@ class TaskAgent:
         # Transfer parameters
         self._session.run(self._transfer_actor)
 
-        # Validate parameters
-        if not self._session.run(self._is_finite):
-            if self._session.run(self._is_inf):
-                print("At least one parameter became infinite")
-            if self._session.run(self._is_nan):
-                print("At least one parameter became NaN")
-
     def reset(self):
         """
         Tells the agent that a new episode has been started, the agent may
@@ -417,6 +407,7 @@ class Agent:
 
 
 def manager(actor_fn, critic_fn, cost_fn, state_space, action_space,
+            penalty=0.0,
             discount=0.99,
             mixing=0.9,
             learning_rate=0.0005,
@@ -433,6 +424,7 @@ def manager(actor_fn, critic_fn, cost_fn, state_space, action_space,
     :param cost_fn: the function used to build the discriminator graphs
     :param state_space: the state space
     :param action_space: the action space
+    :param penalty: the weight of the policy entropy term
     :param discount: the discount factor of the MDP
     :param mixing: the mixing factor for the advantage estimators
     :param learning_rate: the learning rate used for training the policies
@@ -455,6 +447,7 @@ def manager(actor_fn, critic_fn, cost_fn, state_space, action_space,
                          cost_fn=cost_fn,
                          state_space=state_space,
                          action_space=action_space,
+                         penalty=penalty,
                          discount=discount,
                          mixing=mixing,
                          learning_rate=learning_rate,

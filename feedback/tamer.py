@@ -7,6 +7,26 @@ import tensorflow as tf
 import numpy as np
 
 
+class Sample:
+    """
+    Represents an arbitrary state-action feedback sample.  Used to overcome
+    issues with numpy converting lists of tuples to 2D arrays.
+    """
+
+    def __init__(self, state, action, feedback):
+        """
+        Initializes the sample.
+
+        :param state: the state
+        :param action: the action taken
+        :param value: the value of the sample
+        """
+
+        self.state = state
+        self.action = action
+        self.feedback = feedback
+
+
 class TaskAgent:
     """
     A TAMER agent for a single task.
@@ -24,56 +44,76 @@ class TaskAgent:
         # Capture the session
         self._session = session
 
+        # Capture the action space
+        action_space = kwargs['action_space']
+
+        self._discrete_action = action_space.discrete
+
+        if self._discrete_action:
+            self._num_actions = action_space.size
+        else:
+            self._action_shape = action_space.shape
+
+            low = np.asarray(action_space.low, dtype=np.float32)
+            high = np.asarray(action_space.high, dtype=np.float32)
+
+            self._action_scale = high - low
+            self._action_offset = low
+
         # Capture the learning parameters
+        self._epsilon = kwargs['epsilon']
         self._batch_size = kwargs['batch_size']
         self._num_batches = kwargs['num_batches']
-        self._discrete_action = kwargs['discrete_action']
-        self._action_size = kwargs['action_size']
-        self._epsilon = kwargs['epsilon']
-
-        # Compute action ranges
-        low = np.asarray(kwargs['action_low'], dtype=np.float32)
-        high = np.asarray(kwargs['action_high'], dtype=np.float32)
-
-        self._action_scale = high - low
-        self._action_offset = low
-
-        # Initialize the data set
-        self._data = []
 
         # Construct the model
-        with graph.as_default():
+        with graph.as_default(), tf.variable_scope(None, default_name='task'):
             self._feedback_input = tf.placeholder(dtype=tf.float32, shape=[None])
-            self._state_input = tf.placeholder(dtype=tf.float32, shape=[None, self._action_size])
+            self._state_input = tf.placeholder(dtype=tf.float32, shape=[None] + kwargs['state_space'].shape)
 
-            output = kwargs['model_fn'](self._state_input)
+            value = kwargs['value_fn'](self._state_input)
+            advantage = kwargs['advantage_fn'](self._state_input)
 
             # Define loss and action output
-            if self._discrete_action:
+            if self._action_space.discrete:
+
+                # Action input
                 self._action_input = tf.placeholder(dtype=tf.int32, shape=[None])
 
-                one_hot = tf.one_hot(self._action_input, self._action_size)
+                # Action loss
+                one_hot = tf.one_hot(self._action_input, self._action_space.size)
                 value = tf.reduce_sum(one_hot * output, axis=1)
 
                 loss = tf.reduce_sum(tf.square(value - feedback))
+
+                # Action output
                 self._action = tf.argmax(output, axis=1)
             else:
-                self._action_input = tf.placeholder(dtype=tf.float32, shape=[None, self._action_size])
 
-                action_center = output[:, 1:self._action_size + 1]
-                action_weight = output[:, -self._action_size:]
+                # Action input
+                self._action_input = tf.placeholder(dtype=tf.float32, shape=[None] + self._action_shape)
 
-                regret = tf.reduce_sum(tf.exp(action_weight) * tf.square(action_center - self._action_input), axis=1)
-                value = output[:, 0] - regret
+                # Action loss
+                action_center = advantage[:, 0]
+                action_weight = advantage[:, 1]
 
-                loss = tf.reduce_sum(tf.square(self._feedback_input - value))
+                action_axes = list(range(1, len(self._action_shape) + 1))
+
+                regret = tf.exp(action_weight) * tf.square(action_center - self._action_input)
+                prediction = value[:, 0] - tf.reduce_sum(regret, axis=action_axes)
+
+                loss = tf.reduce_mean(tf.square(self._feedback_input - prediction))
+
+                # Action output
                 self._action = action_center
 
             # Define policy update
             self._update = tf.train.AdamOptimizer(learning_rate=kwargs['learning_rate']).minimize(loss)
 
             # Initialize model
-            self._session.run(tf.global_variables_initializer())
+            session.run(tf.variables_initializer(tf.global_variables(scope=tf.get_variable_scope().name)))
+
+        # Initialize data set
+        self._samples = []
 
     def feedback(self, state, action, feedback):
         """
@@ -84,24 +124,24 @@ class TaskAgent:
         :param feedback: the feedback for this action
         """
 
-        self._data.append((state, action, feedback))
+        self._samples.append(Sample(state, action, feedback))
 
-    def act(self, state, explore):
+    def act(self, state, evaluation):
         """
         Samples an action from the agent's policy for the given state.
 
         :param state: the current state
-        :param explore: whether or not to allow exploratory actions
+        :param evaluation: whether this is an evaluation action
         :return: the sampled action
         """
 
-        if explore and np.random.rand() <= self._epsilon:
+        if not evaluation and np.random.rand() <= self._epsilon:
             if self._discrete_action:
-                return np.random.randint(0, self._action_size)
+                return np.random.randint(0, self._num_actions)
             else:
-                return (np.random.rand(self._action_size) * self._action_scale) + self._action_offset
+                return (np.random.random_sample(self._action_shape) * self._action_scale) + self._action_offset
         else:
-            return self._session.run(action, feed_dict={self._state_input: [state]})[0]
+            return self._session.run(self._action, feed_dict={self._state_input: [state]})[0]
 
     def update(self):
         """
@@ -109,15 +149,15 @@ class TaskAgent:
         """
 
         for _ in range(self._num_batches):
-            batch = np.random.choice(self._data, size=self._batch_size)
+            batch = np.random.choice(self._samples, size=self._batch_size)
             states = []
             actions = []
             feedback = []
 
             for sample in batch:
-                states.append(sample[0])
-                actions.append(sample[1])
-                feedback.append(sample[2])
+                states.append(sample.state)
+                actions.append(sample.action)
+                feedback.append(sample.feedback)
 
             self._session.run(self._update, feed_dict={
                 self._state_input: states,
@@ -132,7 +172,7 @@ class Agent:
     interface for learning from interaction with the environment.
     """
 
-    def __init__(self, kwargs):
+    def __init__(self, graph, session, **kwargs):
         """
         Initializes the agent.  Just initializes the dictionary of
         task models and the Tensorflow graph and session.
@@ -144,32 +184,30 @@ class Agent:
         self._kwargs = kwargs
 
         # Create graph and session
-        self._graph = tf.Graph()
-        self._session = tf.Session(graph=self._graph)
+        self._graph = graph
+        self._session = session
 
         # Create task dictionary and define current task
         self._tasks = dict()
         self._current = None
 
-    def set_task(self, name):
-        """
-        Sets the task that the agent is currently learning to perform.
-
-        :param name: the name of the task
-        """
-
-        if name not in self._tasks:
-            self._tasks[name] = TaskAgent(self._graph, self._session, self._kwargs)
-
-        self._current = self._tasks[name]
-
-    def reset(self):
+    def reset(self, task=None):
         """
         Indicates to the agent that a new episode has started, that is
         the current state was sampled independently of the previous state.
+        May also change the current task
 
-        This is a dummy method because TAMER doesn't care about transitions
+        :param task: the name of the task for the new episode
         """
+
+        if self._current is not None:
+            self._current.update()
+
+        if task is not None:
+            if task not in self._tasks:
+                self._tasks[task] = TaskAgent(self._graph, self._session, self._kwargs)
+
+            self._current = self._tasks[task]
 
     def feedback(self, state, action, feedback):
         """
@@ -180,58 +218,74 @@ class Agent:
         :param feedback: the teacher's feedback signal
         """
 
-        if 0.0 != feedback:
+        if self._current is not None and 0.0 != feedback:
             self._current.feedback(state, action, feedback)
 
-    def act(self, state, explore=False):
+    def act(self, state, evaluation=False):
         """
         Samples an action from the agent's policy for the current task.
 
         :param state: the current state
-        :param explore: whether to allow exploratory actions
+        :param evaluation: whether this is an evaluation action (and so should not be exploratory)
         :return: the sampled action
         """
 
-        return self._current.act(state, explore)
+        if self._current is not None:
+            return self._current.act(state, evaluation)
+        else:
+            return None
 
 
-def factory(model_fn, state_size, action_size,
-            action_high=None,
-            action_low=None,
-            discrete_action=False,
+def manager(value_fn, advantage_fn, state_space, action_space,
             epsilon=0.15,
             learning_rate=0.01,
             batch_size=10,
-            num_batches=1000):
+            num_batches=100):
     """
-    Gets a method which constructs a new multitask TAMER agent. This agent does not
-    do temporal credit assignment, but does allow real-valued feedback.  For continuous action
-    spaces, we use a variation on the Normalized Advantage Function architecture.
+    Returns a context manager which is used to instantiate and clean up TAMER
+    agent with the provided configuration.
 
-    :param model_fn: the function used to build the model graph
-    :param state_size: the number of state features
-    :param action_size: the number of actions or action features
-    :param action_high: the maximum value for each action dimension (continuous action)
-    :param action_low: the minimum value for each action dimension (continuous action)
-    :param discrete_action: whether or not the actions are discrete
+    :param value_fn: the function used to build the state-value function graph
+    :param advantage_fn: the function used to build the action advantage function graph
+    :param state_space: the state space
+    :param action_space: the action space
     :param epsilon: the rate at which the agent selects suboptimal actions when exploring
-    :param learning_rate: the learning rate used for training the policies
-    :param batch_size: the batch size used for training the policies
-    :param num_batches: the number of batches used for training the policies
-    :return: a new TAMER agent
+    :param learning_rate: the learning rate for the estimator update
+    :param batch_size: the batch size used for each update
+    :param num_batches: the number of batch updates per episode
+    :return: a context manager which creates a new TAMER agent
     """
 
-    kwargs = {
-        'model_fn': model_fn,
-        'state_size': state_size,
-        'action_size': action_size,
-        'action_high': action_high,
-        'action_low': action_low,
-        'discrete_action': discrete_action,
-        'learning_rate': learning_rate,
-        'epsilon': epsilon,
-        'batch_size': batch_size,
-        'num_batches': num_batches
-    }
+    class Manager:
 
-    return lambda: Agent(kwargs)
+        def __enter__(self):
+            self._graph = tf.Graph()
+            self._session = tf.Session(graph=self._graph)
+
+            return Agent(self._graph, self._session,
+                         value_fn=value_fn,
+                         advantage_fn=advantage_fn,
+                         state_space=state_space,
+                         action_space=action_space,
+                         epsilon=epsilon,
+                         learning_rate=learning_rate,
+                         batch_size=batch_size,
+                         num_batches=num_batches)
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            """
+            Closes the session associated with the current agent.
+
+            :param exc_type: ignored
+            :param exc_val: ignored
+            :param exc_tb: ignored
+            :return: always False, never suppress exceptions
+            """
+
+            self._session.close()
+            self._session = None
+            self._graph = None
+
+            return False
+
+    return Manager()
