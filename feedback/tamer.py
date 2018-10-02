@@ -68,13 +68,13 @@ class TaskAgent:
         # Construct the model
         with graph.as_default(), tf.variable_scope(None, default_name='task'):
             self._feedback_input = tf.placeholder(dtype=tf.float32, shape=[None])
-            self._state_input = tf.placeholder(dtype=tf.float32, shape=[None] + kwargs['state_space'].shape)
+            self._state_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(kwargs['state_space'].shape))
 
             value = kwargs['value_fn'](self._state_input)
             advantage = kwargs['advantage_fn'](self._state_input)
 
             # Define loss and action output
-            if self._action_space.discrete:
+            if self._discrete_action:
 
                 # Action input
                 self._action_input = tf.placeholder(dtype=tf.int32, shape=[None])
@@ -90,7 +90,7 @@ class TaskAgent:
             else:
 
                 # Action input
-                self._action_input = tf.placeholder(dtype=tf.float32, shape=[None] + self._action_shape)
+                self._action_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(self._action_shape))
 
                 # Action loss
                 action_center = advantage[:, 0]

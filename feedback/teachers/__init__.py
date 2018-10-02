@@ -4,3 +4,7 @@ provide evaluative feedback.  These teachers rely on the
 predefined expert for a given environment to determine what
 feedback they should provide.
 """
+
+from .sabl import manager as sabl
+
+__all__ = []

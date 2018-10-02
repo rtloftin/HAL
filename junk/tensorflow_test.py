@@ -3,47 +3,23 @@ import numpy as np
 
 import collections
 
-sess = tf.Session()
+# sess_1 = tf.Session()
+# sess_2 = tf.Session()
 
-with tf.variable_scope("main"):
-
-    with tf.variable_scope("alpha"):
-        alpha_var = tf.Variable(initial_value=tf.random_normal([5]), name="var")
-
-    with tf.variable_scope("beta"):
-        beta_var = tf.Variable(initial_value=tf.random_normal([5]), name="var")
-
-    y = 0.5 * alpha_var
-
-    sess.run(tf.global_variables_initializer())
-    print(sess.run(y))
-
-# input_sequence = tf.placeholder(dtype=tf.float32, shape=[None])
-# sum_sequence = tf.scan(lambda s, x: s + x, input_sequence, 0.0)
-
-# items = tf.Variable([], dtype=tf.float32, use_resource=True)
-# sums = tf.Variable([], dtype=tf.float32, use_resource=True)
-
-# initialize_a = [tf.assign(items, input_sequence, validate_shape=False, use_locking=True)]
-# initialize_b = [tf.assign(sums, sum_sequence, validate_shape=False, use_locking=True)]
-# append = [tf.assign(items, tf.concat([items, input_sequence], 0), validate_shape=False, use_locking=True),
-#          tf.assign(sums, tf.concat([sums, sum_sequence], 0), validate_shape=False, use_locking=True)]
-
-# batch_indices = tf.random_uniform([4], maxval=tf.shape(items)[0], dtype=tf.int32)
-# batch_items = tf.gather(items, batch_indices)
-# batch_sums = tf.gather(sums, batch_indices)
-
-# sess.run([initialize_b, initialize_a], feed_dict={input_sequence: [1., 2., 3.]})
-# sess.run(initialize_a, feed_dict={input_sequence: [1., 2., 3.]})
+x = 1
 
 
-# for _ in range(3):
-#     sess.run(append, feed_dict={input_sequence: [1., 2., 3.]})
+def update():
+    x = 0
 
-# [itms, sms] = sess.run([batch_items, batch_sums])
+    for _ in range(10):
+        x += 1
 
-# print("Items: " + str(itms))
-# print("Sums:  " + str(sms))
+    print(x)
+
+
+update()
+print(x)
 
 """
 examples = tf.placeholder(dtype=tf.float32, shape=[None])
