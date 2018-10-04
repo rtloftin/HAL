@@ -9,7 +9,7 @@ import numpy as np
 
 class Sample:
     """
-    Represents an arbitrary state-action feedback sample.  Used to overcome
+    Represents a state-action feedback sample.  Used to overcome
     issues with numpy converting lists of tuples to 2D arrays.
     """
 
@@ -19,7 +19,7 @@ class Sample:
 
         :param state: the state
         :param action: the action taken
-        :param value: the value of the sample
+        :param feedback: the feedback signal received
         """
 
         self.state = state
@@ -61,7 +61,7 @@ class TaskAgent:
             self._action_offset = low
 
         # Capture the learning parameters
-        self._epsilon = kwargs['epsilon']
+        self._exploration = kwargs['exploration']
         self._batch_size = kwargs['batch_size']
         self._num_batches = kwargs['num_batches']
 
@@ -71,9 +71,8 @@ class TaskAgent:
             self._state_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(kwargs['state_space'].shape))
 
             value = kwargs['value_fn'](self._state_input)
-            advantage = kwargs['advantage_fn'](self._state_input)
 
-            # Define loss and action output
+            # Define loss and action output - there won't be an advantage function for discrete actions
             if self._discrete_action:
 
                 # Action input
@@ -81,7 +80,7 @@ class TaskAgent:
 
                 # Action loss
                 one_hot = tf.one_hot(self._action_input, self._action_space.size)
-                value = tf.reduce_sum(one_hot * output, axis=1)
+                value = tf.reduce_sum(one_hot * value, axis=1)
 
                 loss = tf.reduce_sum(tf.square(value - feedback))
 
@@ -93,6 +92,8 @@ class TaskAgent:
                 self._action_input = tf.placeholder(dtype=tf.float32, shape=[None] + list(self._action_shape))
 
                 # Action loss
+                advantage = kwargs['advantage_fn'](self._state_input)
+
                 action_center = advantage[:, 0]
                 action_weight = advantage[:, 1]
 
@@ -135,7 +136,7 @@ class TaskAgent:
         :return: the sampled action
         """
 
-        if not evaluation and np.random.rand() <= self._epsilon:
+        if not evaluation and np.random.rand() <= self._exploration:
             if self._discrete_action:
                 return np.random.randint(0, self._num_actions)
             else:
@@ -236,8 +237,9 @@ class Agent:
             return None
 
 
-def manager(value_fn, advantage_fn, state_space, action_space,
-            epsilon=0.15,
+def manager(value_fn, state_space, action_space,
+            advantage_fn=None,
+            exploration=0.15,
             learning_rate=0.01,
             batch_size=10,
             num_batches=100):
@@ -246,10 +248,10 @@ def manager(value_fn, advantage_fn, state_space, action_space,
     agent with the provided configuration.
 
     :param value_fn: the function used to build the state-value function graph
-    :param advantage_fn: the function used to build the action advantage function graph
     :param state_space: the state space
     :param action_space: the action space
-    :param epsilon: the rate at which the agent selects suboptimal actions when exploring
+    :param advantage_fn: the function used to build the action advantage function graph (only for continuous actions)
+    :param exploration: the rate at which the agent selects suboptimal actions when exploring
     :param learning_rate: the learning rate for the estimator update
     :param batch_size: the batch size used for each update
     :param num_batches: the number of batch updates per episode
@@ -267,7 +269,7 @@ def manager(value_fn, advantage_fn, state_space, action_space,
                          advantage_fn=advantage_fn,
                          state_space=state_space,
                          action_space=action_space,
-                         epsilon=epsilon,
+                         exploration=exploration,
                          learning_rate=learning_rate,
                          batch_size=batch_size,
                          num_batches=num_batches)

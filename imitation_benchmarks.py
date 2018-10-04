@@ -12,36 +12,6 @@ import sys
 import numpy as np
 
 
-def generate(environment, demonstrations=100, steps=500):
-    """
-    Generates a dataset of demonstrations for all of the tasks
-    defined in the given environment.
-
-    :param environment: the environment in which to generate the demonstrations
-    :param demonstrations: the number of demonstration to give of each task
-    :param steps: the maximum number of steps to allow
-    :return: the generated data set
-    """
-
-    data = imitation.Dataset()
-
-    for task in environment.get_tasks():
-        for demonstration in range(demonstrations):
-            print("Demonstration " + str(demonstration))
-
-            environment.reset(task=task)
-            data.new(task)
-            step = 0
-
-            while not environment.complete and (step < steps):
-                action = environment.expert()
-                data.step(environment.state, action)
-                environment.update(action)
-                step += 1
-
-    return data
-
-
 def benchmark(agent, environment, data, episodes=1000, steps=500, window=20):
     """
     Trains an imitation learning agent on a given set of demonstrations then
@@ -107,7 +77,7 @@ gail_ppo = imitation.gail_ppo(actor_fn, critic_fn, cost_fn, env.state_space, env
                               num_batches=1,
                               num_episodes=1)
 
-data = generate(env, demonstrations=10)
+data = imitation.dataset(env, demonstrations=10)
 
 with gail_ppo as agent:
     benchmark(agent, env, data)

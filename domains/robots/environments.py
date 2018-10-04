@@ -37,21 +37,11 @@ class Environment:
         self._reward = 0
         self._complete = False
 
-    def get_tasks(self):
-        """
-        Returns a list of the task names for this environment, for
-        the Roboschool environments we only have the 'default' task
-
-        :return: a list of task names
-        """
-
-        return ['default']
-
     def reset(self, task=None):
         """
         Starts a new episode.  Resets to a random initial state.
 
-        :param task: the name of the current task, if set, changes the current task
+        :param task: ignored here because each environment has only one task
         """
 
         self._state = self._env.reset()
@@ -85,6 +75,14 @@ class Environment:
         return self._action_space
 
     @property
+    def tasks(self):
+        return ['default']
+
+    @property
+    def task(self):
+        return 'default'
+
+    @property
     def state(self):
         return self._state
 
@@ -98,40 +96,16 @@ class Environment:
 
 
 def ant():
-    """
-    Gets an instance of the Ant environment.
-
-    :return: an Ant environment
-    """
-
     return Environment(gym.make("RoboschoolAnt-v1"), AntPolicy())
 
 
 def hopper():
-    """
-    Gets an instance of the Hopper environment.
-
-    :return: an Hopper environment
-    """
-
     return Environment(gym.make("RoboschoolHopper-v1"), HopperPolicy())
 
 
 def reacher():
-    """
-    Gets an instance of the Reacher environment.
-
-    :return: an Reacher environment
-    """
-
     return Environment(gym.make("RoboschoolReacher-v1"), ReacherPolicy())
 
 
 def pendulum():
-    """
-    Gets an instance of the Pendulum environment.
-
-    :return: an Pendulum environment
-    """
-
     return Environment(gym.make("RoboschoolInvertedPendulumSwingup-v1"), PendulumPolicy())

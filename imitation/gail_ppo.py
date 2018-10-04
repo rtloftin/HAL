@@ -358,6 +358,8 @@ class Agent:
         Initializes the agent.  Just initializes the dictionary of
         task models and the TensorFlow graph and session.
 
+        :param graph: the TensorFlow graph to use
+        :param session: the TensorFlow session to use
         :param kwargs: the configuration parameters for the agent.
         """
 

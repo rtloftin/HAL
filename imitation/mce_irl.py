@@ -2,6 +2,8 @@
 A multitask implementation of maximum causal entropy IRL using approximate
 value iteration to find policies in large state spaces.  Uses
 the normalized advantage function to handle action spaces.
+
+IT IS NOT CLEAR THAT THIS APPROACH WILL WORK IN OUR DOMAINS, SO WE WILL WORK ON GAIL FIRST
 """
 
 class Sample:

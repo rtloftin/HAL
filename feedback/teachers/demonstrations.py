@@ -1,23 +1,28 @@
 """
-Defines a class used to store sets of demonstrations of multiple tasks.
+Defines a class used to store expert trajectories which
+some of the teachers will use to learn their feedback models.
+
+WE MAY WANT TO MERGE THIS WITH THE SIMILAR CLASS USED FOR LEARNING FROM DEMONSTRATION
 """
 
 
 class Step:
     """
-    A single state-action pair.
+    A single state-action pair, with immediate reward.
     """
 
-    def __init__(self, state, action):
+    def __init__(self, state, action, reward):
         """
         Constructs the state-action pair.
 
         :param state: the current state
         :param action: the action taken
+        :param reward: the immediate reward received
         """
 
         self._state = state
         self._action = action
+        self._reward = reward
 
     @property
     def state(self):
@@ -28,10 +33,9 @@ class Step:
         return self._action
 
 
-class Dataset:
+class Demonstrations:
     """
-    A collection of demonstrations of multiple tasks, along
-    with utility methods for manipulating them.
+    A collection of demonstrations of multiple tasks.  Includes associated reward values.
     """
 
     def __init__(self):
@@ -56,25 +60,17 @@ class Dataset:
         self._current = []
         self._tasks[task].append(self._current)
 
-    def step(self, state, action):
+    def step(self, state, action, reward):
         """
         Demonstrates a single state-action pair.
 
         :param state: the current state
         :param action: the action taken
+        :param reward: the immediate reward received
         """
 
         if self._current is not None:
-            self._current.append(Step(state, action))
-
-    def tasks(self):
-        """
-        Gets a list of the names of all of the tasks contained in this dataset.
-
-        :return: a list of tasks names
-        """
-
-        return self._tasks.keys()
+            self._current.append(Step(state, action, reward))
 
     def trajectories(self, task):
         """
@@ -86,20 +82,9 @@ class Dataset:
 
         return self._tasks[task]
 
-    def steps(self, task):
-        """
-        Gets a list of all the state action pairs demonstrated for a task.
-
-        :param task: the name of the task
-        :return: a list of state-action pairs
-        """
-
-        steps = []
-
-        for trajectory in self._tasks[task]:
-            steps.extend(trajectory)
-
-        return steps
+    @property
+    def tasks(self):
+        return self._tasks.keys()
 
 
 def generate(env, episodes=1000, steps=500):
@@ -112,7 +97,7 @@ def generate(env, episodes=1000, steps=500):
     :return: a Demonstrations object containing the demonstrations
     """
 
-    data = Dataset()
+    data = Demonstrations()
 
     for task in environment.tasks:
         for demo in range(episodes):
@@ -125,8 +110,8 @@ def generate(env, episodes=1000, steps=500):
             while not env.complete and (step < steps):
                 state = env.state()
                 action = env.expert()
-                data.step(state, action)
                 env.update(action)
+                data.step(state, action, env.reward)
                 step += 1
 
     return data
