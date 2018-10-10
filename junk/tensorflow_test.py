@@ -1,25 +1,66 @@
 import tensorflow as tf
 import numpy as np
 
+from enum import IntEnum
 import collections
 
-# sess_1 = tf.Session()
-# sess_2 = tf.Session()
 
-x = 1
+"""
+sess = tf.Session()
 
+rewards = tf.placeholder(dtype=tf.float32, shape=[None])
+transition_indices = tf.placeholder(dtype=tf.int32, shape=[None, None, None])
+transition_probabilities = tf.placeholder(dtype=tf.float32, shape=[None, None, None])
 
-def update():
-    x = 0
-
-    for _ in range(10):
-        x += 1
-
-    print(x)
+discount = 0.9
+steps = 20
 
 
-update()
-print(x)
+def update(values, step):
+    q = tf.gather(values, transition_indices)
+    q = tf.reduce_sum(transition_probabilities * q, axis=2)
+    values = rewards + (discount * tf.reduce_max(q, axis=1))
+
+    return values, 1 + step
+
+
+def limit(values, step):
+    return step < steps
+
+
+output, _ = tf.while_loop(limit, update, [tf.zeros_like(rewards, dtype=tf.float32), 0])
+
+print(str(sess.run(output, feed_dict={
+    rewards: [0.0, 0.0, 1.0, 0.0, 0.0],
+    transition_indices: [
+        [[4], [1]],
+        [[0], [2]],
+        [[1], [3]],
+        [[2], [4]],
+        [[3], [0]]],
+    transition_probabilities: [
+        [[1.], [1.]],
+        [[1.], [1.]],
+        [[1.], [1.]],
+        [[1.], [1.]],
+        [[1.], [1.]]]
+})))
+"""
+
+
+class Action(IntEnum):
+    """
+    An enum describing the set of possible actions.
+    """
+
+    STAY = 0
+    UP = 1
+    DOWN = 2
+    LEFT = 3
+    RIGHT = 4
+
+
+print(len(Action))
 
 """
 examples = tf.placeholder(dtype=tf.float32, shape=[None])
