@@ -3,7 +3,7 @@ import numpy as np
 from enum import IntEnum
 
 
-class SensorState(IntEnum):
+class Occupancy(IntEnum):
     """
     An enum describing possible states of the sensor map.
     """
@@ -31,7 +31,7 @@ class SquareSensor:
         self._radius = radius
 
         if map is None:
-            self._map = np.full_like(env.occupied, SensorState.UNKNOWN)
+            self._map = np.full_like(env.occupied, Occupancy.UNKNOWN)
         else:
             self._map = np.copy(map)
 
@@ -52,9 +52,9 @@ class SquareSensor:
         for x_pos in range(x_start, x_end):
             for y_pos in range(y_start, y_end):
                 if occupied[x_pos, y_pos]:
-                    self._map[x_pos, y_pos] = SensorState.OCCUPIED
+                    self._map[x_pos, y_pos] = Occupancy.OCCUPIED
                 else:
-                    self._map[x_pos, y_pos] = SensorState.CLEAR
+                    self._map[x_pos, y_pos] = Occupancy.CLEAR
 
     def clone(self):
         """
@@ -98,7 +98,7 @@ class RoundSensor:
         self._rsquared = radius * radius
 
         if map is None:
-            self._map = np.full_like(env.occupied, SensorState.UNKNOWN)
+            self._map = np.full_like(env.occupied, Occupancy.UNKNOWN)
         else:
             self._map = np.copy(map)
 
@@ -123,9 +123,9 @@ class RoundSensor:
 
                 if (dx * dx) + (dy * dy) <= self._rsquared:
                     if occupied[x_pos, y_pos]:
-                        self._map[x_pos, y_pos] = SensorState.OCCUPIED
+                        self._map[x_pos, y_pos] = Occupancy.OCCUPIED
                     else:
-                        self._map[x_pos, y_pos] = SensorState.CLEAR
+                        self._map[x_pos, y_pos] = Occupancy.CLEAR
 
     def clone(self):
         """
