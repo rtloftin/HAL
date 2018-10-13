@@ -1,18 +1,29 @@
 import pyglet as pg
-from .sensor import SensorState
+
+from .sensor import Occupancy
 from .environment import Action
 
 
-def visualize(env, task, manual=True):
+def visualize(env, sensor, task=None, expert=None):
     """
     Starts an graphical, interactive simulation of the given navigation environment.
 
     Uses the Pyglet game engine.
     """
 
+    # Select the task if one is nt provided
+    if task is None:
+        task = list(env.tasks)[0][0]
+
+    # Initialize the expert if there is one
+    if expert is not None:
+        expert.task(task)
+
     # Initialize environment
-    env.set_task(task)
-    env.reset()
+    env.reset(task=task)
+
+    # Initialize sensor
+    sensor.update()
 
     # Set the size in pixels of each drawn cell
     scale = 20
@@ -62,23 +73,25 @@ def visualize(env, task, manual=True):
                 pg.gl.glScalef(scale, scale, 1)
                 pg.gl.glTranslatef(x, y, 0)
 
-                if SensorState.CLEAR == env.map[x, y]:
+                if Occupancy.CLEAR == sensor.map[x, y]:
                     clear.draw(pg.gl.GL_QUADS)
-                elif SensorState.OCCUPIED == env.map[x, y]:
+                elif Occupancy.OCCUPIED == sensor.map[x, y]:
                     obstacle.draw(pg.gl.GL_QUADS)
                 else:
-                    if env.occupancy[x, y]:
+                    if env.occupied[x, y]:
                         unknown_obstacle.draw(pg.gl.GL_QUADS)
                     else:
                         unknown_clear.draw(pg.gl.GL_QUADS)
 
         # Draw goal
+        goal = env.task.goal
+
         pg.gl.glLoadIdentity()
         pg.gl.glScalef(scale, scale, 1)
-        pg.gl.glTranslatef(env.goal_x, env.goal_y, 0)
+        pg.gl.glTranslatef(goal.x, goal.y, 0)
 
         pg.graphics.draw(4, pg.gl.GL_QUADS,
-                         ('v2f', (0, 0, 0, env.goal_height, env.goal_width, env.goal_height, env.goal_width, 0)),
+                         ('v2f', (0, 0, 0, goal.height, goal.width, goal.height, goal.width, 0)),
                          ('c3B', (255, 140, 0, 255, 140, 0, 255, 140, 0, 255, 140, 0)))
 
         # Draw agent
@@ -100,16 +113,20 @@ def visualize(env, task, manual=True):
         pg.image.get_buffer_manager().get_color_buffer().save("navigation_" + str(capture_index) + ".png")
 
     # Decide whether we are doing manual or agent control
-    if manual:
+    if expert is None:
         def on_key_press(symbol, modifier):
             if pg.window.key.UP == symbol:
                 env.update(Action.UP)
+                sensor.update()
             elif pg.window.key.DOWN == symbol:
                 env.update(Action.DOWN)
+                sensor.update()
             elif pg.window.key.LEFT == symbol:
                 env.update(Action.LEFT)
+                sensor.update()
             elif pg.window.key.RIGHT == symbol:
                 env.update(Action.RIGHT)
+                sensor.update()
             elif pg.window.key.SPACE == symbol:
                 env.reset()
             elif pg.window.key.ENTER == symbol:
@@ -125,8 +142,9 @@ def visualize(env, task, manual=True):
 
         window.on_key_press = on_key_press
 
-        def update():
-            env.update(env.expert())
+        def update(dt):
+            env.update(expert.act(env.x, env.y))
+            sensor.update()
 
         pg.clock.schedule_interval(update, 0.7)
 

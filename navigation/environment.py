@@ -112,7 +112,7 @@ class Task:
         :return: the x and y coordinates of the cell
         """
 
-        return np.choice(self._initial).sample()
+        return np.random.choice(self._initial).sample()
 
     @property
     def goal(self):
@@ -211,7 +211,11 @@ class Environment:
             self._task = self._tasks[task]
 
         # Get a random initial position based on the task
-        self._x, self._y = self._task.sample()
+        while True:
+            self._x, self._y = self._task.sample()
+
+            if 0 <= self._x < self._width and 0 <= self._y < self._height and not self._occupied[self._x, self._y]:
+                break
 
     def update(self, action):
         """
@@ -251,7 +255,7 @@ class Environment:
 
     @property
     def tasks(self):
-        self._tasks.items()
+        return self._tasks.items()
 
     @property
     def task(self):

@@ -11,10 +11,7 @@ import numpy as np
 
 class Agent:
     """
-    A multi-task behavioral cloning agent.  This does not
-    implement an interface for learning from interaction
-    with the environment, but simply runs supervised on
-    a set of demonstrated actions.
+    A multi-task ML-IRL agent.
     """
 
     def __init__(self, sensor, data, graph, session, **kwargs):
@@ -36,6 +33,7 @@ class Agent:
         # Unpack configuration
         gamma = kwargs['gamma']
         beta = kwargs['beta']
+        penalty = kwargs['penalty']
         iterations = kwargs['iterations']
         learning_rate = kwargs['learning_rate']
 
@@ -44,7 +42,7 @@ class Agent:
         self._num_batches = kwargs['num_batches']
 
         # Initialize the transition dynamics model
-        self._transitions = np.empty([sensor.width * sensor.height, len(Actions), 2], dtype=np.int32)
+        self._transitions = np.empty([sensor.width * sensor.height, len(Action), 2], dtype=np.int32)
         self._probabilities = np.empty_like(self._transitions, dtype=np.float32)
 
         self._build()
@@ -55,6 +53,9 @@ class Agent:
         self._action_outputs = dict()
         self._reward_updates = dict()
 
+        self._state_input = None
+        self._action_output = None
+
         with graph.as_default():
 
             # Define model variables
@@ -62,40 +63,42 @@ class Agent:
             probabilities = tf.Variable(self._probabilities, dtype=tf.float32, trainable=False, use_resource=True)
 
             self._transition_input = tf.placeholder(dtype=tf.int32, shape=self._transitions.shape)
-            self._probability_input = tf.placeholder(dtype=tf.int32, shape=self._probabilities.shape)
+            self._probability_input = tf.placeholder(dtype=tf.float32, shape=self._probabilities.shape)
 
             self._transfer = tf.group(tf.assign(transitions, self._transition_input),
                                       tf.assign(probabilities, self._probability_input))
 
             # Define value iteration
-            def update(q, t):
+            def update(q, r, t):
                 v = tf.log(tf.reduce_sum(tf.exp(beta * q), axis=1))
                 q = tf.gather(v, transitions)
-                return reward + (gamma * tf.reduce_sum(probabilities * q, axis=2))
+                q = (gamma * tf.reduce_sum(probabilities * q, axis=2)) + tf.expand_dims(r, axis=1)
+                return q, r, t + 1
 
-            def limit(q, t):
+            def limit(q, r, t):
                 return t < iterations
 
             # Iterate over all tasks
             for task in data.tasks:
 
+                # Define state and action inputs
+                state_input = tf.placeholder(dtype=tf.int32, shape=[None])
+                action_input = tf.placeholder(dtype=tf.int32, shape=[None])
+
                 # Define the reward function
                 reward = tf.Variable(tf.random_normal([sensor.width * sensor.height], stddev=0.1, dtype=tf.float32))
 
                 # Define value function
-                values = tf.while_loop(limit, update, [tf.zeros([sensor.width * sensor.height, len(Action)]), 0])
+                values, _, _ = tf.while_loop(limit, update, [tf.zeros((sensor.width * sensor.height, len(Action)),
+                                                                      dtype=tf.float32), reward, 0])
                 values = beta * tf.gather(values, state_input)
-
-                # Define state and action inputs
-                state_input = tf.placeholder(dtype=tf.int32, shape=[None])
-                action_input = tf.placeholder(dtype=tf.int32, shape=[None])
 
                 # Define the action prediction loss
                 partition = tf.log(tf.reduce_sum(tf.exp(values), axis=1))
                 likelihood = tf.gather(values, action_input, axis=1)
 
-                loss = tf.reduce_mean(partition - likelihood)
-                update = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
+                loss = tf.reduce_mean(partition - likelihood) + (penalty * tf.reduce_mean(tf.square(reward)))
+                reward_update = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
                 # Define the action output
                 action_output = tf.multinomial(values, 1)
@@ -104,7 +107,7 @@ class Agent:
                 self._state_inputs[task] = state_input
                 self._action_inputs[task] = action_input
                 self._action_outputs[task] = action_output
-                self._reward_updates[task] = update
+                self._reward_updates[task] = reward_update
 
             # Initialize the model
             session.run(tf.global_variables_initializer())
@@ -117,7 +120,9 @@ class Agent:
 
             samples = data.steps(task)
 
-            for _ in self._num_batches:
+            for b in range(self._num_batches):
+                print("Task: " + task + ", batch " + str(b))
+
                 batch = np.random.choice(samples, self._batch_size)
                 states = []
                 actions = []
@@ -181,7 +186,7 @@ class Agent:
 
             samples = self._data.steps(task)
 
-            for _ in self._num_batches:
+            for _ in range(self._num_batches):
                 batch = np.random.choice(samples, self._batch_size)
                 states = []
                 actions = []
@@ -195,26 +200,33 @@ class Agent:
                     action_input: actions
                 })
 
-    def act(self, x, y, task):
+    def task(self, name):
+        """
+        Sets the task the agent is currently performing.
+
+        :param name: the name of the task
+        """
+
+        self._state_input = self._state_inputs[name]
+        self._action_output = self._action_outputs[name]
+
+    def act(self, x, y):
         """
         Samples an action from the agent's policy for the current state
 
         :param x: the agent's x coordinate
         :param y: the agent's y coordinate
-        :param task: the name of the task being performed
         :return: the sampled action
         """
 
-        state_input = self._state_inputs[task]
-        action_output = self._action_outputs[task]
-
-        return self._session.run(action_output, feed_dict={
-            state_input: [(x * self._sensor.height) + y]
+        return self._session.run(self._action_output, feed_dict={
+            self._state_input: [(x * self._sensor.height) + y]
         })[0, 0]
 
 
 def builder(beta=1.0,
             gamma=0.95,
+            penalty=0.01,
             iterations=200,
             baseline=0.2,
             learning_rate=0.001,
@@ -226,6 +238,7 @@ def builder(beta=1.0,
 
     :param beta: the temperature parameter for the soft value iteration
     :param gamma: the discount factor
+    :param penalty: the regularization term for the cost functions
     :param iterations: the number of value iterations to perform
     :param baseline: the probability of an obstacle being in an unobserved cell
     :param learning_rate: the learning rate for training the cost functions
@@ -245,6 +258,7 @@ def builder(beta=1.0,
                     agent = Agent(sensor, data, self._graph, self._session,
                                   beta=beta,
                                   gamma=gamma,
+                                  penalty=penalty,
                                   iterations=iterations,
                                   baseline=baseline,
                                   learning_rate=learning_rate,

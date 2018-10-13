@@ -31,7 +31,7 @@ class SquareSensor:
         self._radius = radius
 
         if map is None:
-            self._map = np.full_like(env.occupied, Occupancy.UNKNOWN)
+            self._map = np.full(env.occupied.shape, Occupancy.UNKNOWN)
         else:
             self._map = np.copy(map)
 
@@ -98,7 +98,7 @@ class RoundSensor:
         self._rsquared = radius * radius
 
         if map is None:
-            self._map = np.full_like(env.occupied, Occupancy.UNKNOWN)
+            self._map = np.full(env.occupied.shape, Occupancy.UNKNOWN)
         else:
             self._map = np.copy(map)
 

@@ -1,23 +1,13 @@
 """
-Conducts a set of experiments in the navigation domain.
+Conducts a set of experiments in the robot navigation domain
 """
 
+import navigation as nav
 
-def cloning(env, tasks, experts):
-    """
-    Evaluates the behavioral cloning algorithm in isolation.
+env, sensor = nav.one_room()
 
-    :param env: the environment simulation
-    :param tasks: a list of named tasks
-    :param experts: a dictionary of expert policies
-    """
+ml_irl = nav.ml_irl()
 
-
-def mce_irl(env, tasks, experts):
-    """
-    Evaluates the MCE-IRL algorithm in isolation.
-
-    :param env: the environment simulation
-    :param tasks: a list of named tasks
-    :param experts: a dictionary of expert policies
-    """
+nav.sensor_experiment(env, sensor, {
+    "ML-IRL": ml_irl
+})

@@ -25,7 +25,7 @@ class Expert:
         self._height = env.height
 
         # Define the transition model
-        transitions = np.empty([env.width * env.height, len(Action)])
+        transitions = np.empty([env.width * env.height, len(Action)], dtype=np.int32)
 
         def index(x, y):
             return (x * env.height) + y
@@ -58,12 +58,12 @@ class Expert:
                 v = tf.reduce_max(q, axis=1)
                 n = tf.gather(v, transitions)
 
-                return reward_input + n
+                return n + tf.expand_dims(reward_input, axis=1), t + 1
 
             def limit(q, t):
                 return t < 4 * (env.width + env.height)
 
-            value_output = tf.while_loop(limit, update, [tf.zeros_like(transitions), 0])
+            value_output, _ = tf.while_loop(limit, update, [tf.zeros_like(transitions, dtype=tf.float32), 0])
 
         # Compute the optimal policies
         self._policies = dict()
@@ -80,7 +80,7 @@ class Expert:
                         reward[index(x, y)] = 1.0 if task.complete(x, y) else 0.0
 
                 # Compute value function
-                values = sess.run(value_output, feed_dict={reward_input})
+                values = sess.run(value_output, feed_dict={reward_input: reward})
 
                 # Construct policy
                 max = np.max(values, axis=1)

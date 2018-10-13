@@ -48,19 +48,15 @@ print(str(sess.run(output, feed_dict={
 """
 
 
-class Action(IntEnum):
-    """
-    An enum describing the set of possible actions.
-    """
+dictionary = {
+    "one": 1,
+    "two": 2,
+    "three": 3
+}
 
-    STAY = 0
-    UP = 1
-    DOWN = 2
-    LEFT = 3
-    RIGHT = 4
+for name, value in dictionary.items():
+    print(name + ", " + str(value))
 
-
-print(len(Action))
 
 """
 examples = tf.placeholder(dtype=tf.float32, shape=[None])
