@@ -47,7 +47,7 @@ class Region:
         dx = x - self._x
         dy = y - self._y
 
-        return (0 <= dx < self.width) and (0 <= dy < self.height)
+        return (0 <= dx < self._width) and (0 <= dy < self._height)
 
     def sample(self):
         """

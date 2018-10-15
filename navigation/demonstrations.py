@@ -46,7 +46,10 @@ class Demonstrations:
         """
 
         self._tasks = dict()
-        self._current = None
+        self._trajectories = dict()
+
+        self._current_task = None
+        self._current_trajectory = None
 
     def new(self, task):
         """
@@ -58,9 +61,12 @@ class Demonstrations:
 
         if task not in self._tasks:
             self._tasks[task] = []
+            self._trajectories[task] = []
 
-        self._current = []
-        self._tasks[task].append(self._current)
+        self._current_task = self._tasks[task]
+
+        self._current_trajectory = []
+        self._trajectories[task].append(self._current_trajectory)
 
     def step(self, x, y, action):
         """
@@ -71,23 +77,29 @@ class Demonstrations:
         :param action: the action taken
         """
 
-        if self._current is not None:
-            self._current.append(Step(x, y, action))
+        if self._current_task is not None:
+            step = Step(x, y, action)
+
+            self._current_task.append(step)
+            self._current_trajectory.append(step)
+
+    def trajectories(self, task):
+        """
+        Gets a list of all the state-action trajectories for a task.
+
+        :param task: the name of the task
+        :return: a list of trajectories
+        """
 
     def steps(self, task):
         """
-        Gets a list of all the state action pairs demonstrated for a task.
+        Gets a list of all the state-action pairs demonstrated for a task.
 
         :param task: the name of the task
         :return: a list of state-action pairs
         """
 
-        steps = []
-
-        for trajectory in self._tasks[task]:
-            steps.extend(trajectory)
-
-        return steps
+        return self._tasks[task]
 
     @property
     def tasks(self):

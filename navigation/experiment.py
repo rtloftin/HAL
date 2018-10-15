@@ -4,13 +4,12 @@ Defines methods for running learning experiments in the robot navigation domain.
 
 from .demonstrations import Demonstrations
 from .expert import Expert
+from .visualization import visualize, render
 
 
-def session(env, sensor, agent, episodes=10, steps=None, interval=10):
+def session(env, sensor, agent, episodes=10, steps=None, interval=50):
     """
-    Runs a single learning session with a single agent
-
-    TODO: INCOMPLETE
+    Runs a single learning session with a single agent.
 
     :param env: the environment in which the agent learns
     :param sensor: the agent's local sensor model
@@ -30,7 +29,7 @@ def session(env, sensor, agent, episodes=10, steps=None, interval=10):
         for task, _ in env.tasks:
             print("Episode " + str(episode) + ", task: " + task)
 
-            env.reset(task=tasks)
+            env.reset(task=task)
             agent.task(task)
             sensor.update()
             step = 0
@@ -40,6 +39,9 @@ def session(env, sensor, agent, episodes=10, steps=None, interval=10):
                 sensor.update()
                 step += 1
 
+                if 0 == step % interval:
+                    agent.update()
+
             total += step
 
         costs.append(total)
@@ -47,7 +49,31 @@ def session(env, sensor, agent, episodes=10, steps=None, interval=10):
     return costs
 
 
-def sensor_experiment(env, sensor, algorithms, sessions=10, demonstrations=5,  episodes=100):
+def evaluate(env, agent, episodes=10, steps=None):
+    steps = (env.width + env.height) * 4 if steps is None else steps
+    total = 0.
+
+    for episode in range(episodes):
+        for task, _ in env.tasks:
+            print("Episode " + str(episode) + ", task: " + task)
+
+            env.reset(task=task)
+            agent.task(task)
+            step = 0
+
+            while not env.complete and step < steps:
+                action = agent.act(env.x, env.y)
+                print("Action: " + str(action))
+
+                env.update(action)
+                step += 1
+
+            total += step
+
+    print("Agent return: " + str(total / episodes))
+
+
+def sensor_experiment(env, sensor, algorithms, sessions=1, demonstrations=5,  baselines=100, steps=None):
     """
     Runs an evaluation of a given set of learning algorithms, uses a sensor model
     that allows the agent to directly observe the environment
@@ -57,11 +83,15 @@ def sensor_experiment(env, sensor, algorithms, sessions=10, demonstrations=5,  e
     :param algorithms: a dictionary of builders for the different learning agents
     :param sessions: the number of learning sessions to run for each algorithm
     :param demonstrations: the number of demonstrations to provide for each task
-    :param episodes: the number of episodes used to evaluate the expert baseline
+    :param baselines: the number of episodes used to compute the expert baseline
+    :param steps: the maximum number of steps to allow per episode
     """
 
     # Construct expert
     expert = Expert(env)
+
+    # Compute step limit if not provided
+    steps = (env.width + env.height) * 4 if steps is None else steps
 
     # Generate demonstrations and baseline
     data = Demonstrations()
@@ -78,7 +108,7 @@ def sensor_experiment(env, sensor, algorithms, sessions=10, demonstrations=5,  e
             data.new(task)
             step = 0
 
-            while not env.complete and step < ((env.width + env.height) * 4):
+            while not env.complete and step < steps:
                 action = expert.act(env.x, env.y)
                 data.step(env.x, env.y, action)
                 env.update(action)
@@ -88,18 +118,19 @@ def sensor_experiment(env, sensor, algorithms, sessions=10, demonstrations=5,  e
         # Estimate baseline
         task_baseline = 0.
 
-        for _ in range(episodes):
+        for _ in range(baselines):
             env.reset(task=task)
             step = 0
 
-            while not env.complete and step < ((env.width + env.height) * 4):
-                data.step(env.x, env.y, action)
-                env.update(action)
+            while not env.complete and step < steps:
+                env.update(expert.act(env.x, env.y))
                 step += 1
 
             task_baseline += step
 
-        baseline += task_baseline / demonstrations
+        baseline += task_baseline / baselines
+
+    print("baseline cost: " + str(baseline))
 
     # Evaluate algorithms
     for name, algorithm in algorithms.items():
@@ -108,4 +139,13 @@ def sensor_experiment(env, sensor, algorithms, sessions=10, demonstrations=5,  e
             agent_sensor = sensor.clone()
 
             with algorithm(agent_sensor, data) as agent:
-                session(env, agent_sensor, agent)
+                # render(agent.rewards(task))
+                # visualize(env, agent_sensor, task=task, expert=agent)
+                # evaluate(env, agent)
+
+                costs = session(env, agent_sensor, agent, steps=steps)
+
+                for i in range(len(costs)):
+                    costs[i] = costs[i] / baseline
+
+                print(costs)

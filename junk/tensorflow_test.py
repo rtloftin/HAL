@@ -1,13 +1,24 @@
 import tensorflow as tf
 import numpy as np
+import matplotlib.pyplot as pl
 
 from enum import IntEnum
 import collections
 
 
-"""
 sess = tf.Session()
 
+values = tf.placeholder(tf.float32, shape=[None, 2])
+indices = tf.placeholder(tf.int32, shape=[None, 4])
+
+
+
+print(sess.run(results, feed_dict={
+    values: [[1, 2], [3, 4], [5, 6], [7, 8]],
+    indices: [0, 1, 1, 0]
+}))
+
+"""
 rewards = tf.placeholder(dtype=tf.float32, shape=[None])
 transition_indices = tf.placeholder(dtype=tf.int32, shape=[None, None, None])
 transition_probabilities = tf.placeholder(dtype=tf.float32, shape=[None, None, None])
@@ -46,17 +57,6 @@ print(str(sess.run(output, feed_dict={
         [[1.], [1.]]]
 })))
 """
-
-
-dictionary = {
-    "one": 1,
-    "two": 2,
-    "three": 3
-}
-
-for name, value in dictionary.items():
-    print(name + ", " + str(value))
-
 
 """
 examples = tf.placeholder(dtype=tf.float32, shape=[None])

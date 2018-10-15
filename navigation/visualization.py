@@ -1,4 +1,5 @@
 import pyglet as pg
+import matplotlib.pyplot as pl
 
 from .sensor import Occupancy
 from .environment import Action
@@ -149,3 +150,9 @@ def visualize(env, sensor, task=None, expert=None):
         pg.clock.schedule_interval(update, 0.7)
 
     pg.app.run()
+
+
+def render(values):
+    fig, ax = pl.subplots()
+    ax.pcolormesh(values)
+    pl.show()

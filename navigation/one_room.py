@@ -33,6 +33,6 @@ def one_room():
     env.reset(task="top")
 
     # Initialize sensor model
-    sensor = RoundSensor(env, 4)
+    sensor = RoundSensor(env, 3)
 
     return env, sensor
