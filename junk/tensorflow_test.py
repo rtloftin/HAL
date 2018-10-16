@@ -8,14 +8,13 @@ import collections
 
 sess = tf.Session()
 
-values = tf.placeholder(tf.float32, shape=[None, 2])
-indices = tf.placeholder(tf.int32, shape=[None, 4])
+x = tf.placeholder(tf.int32, shape=[4])
+t = tf.constant(-2, dtype=tf.float32, shape=[4])
+f = tf.constant(-3, dtype=tf.float32, shape=[4])
+y = tf.where(tf.equal(x, 1), t, f)
 
-
-
-print(sess.run(results, feed_dict={
-    values: [[1, 2], [3, 4], [5, 6], [7, 8]],
-    indices: [0, 1, 1, 0]
+print(sess.run(y, feed_dict={
+    x: [1, 2, 2, 1]
 }))
 
 """
