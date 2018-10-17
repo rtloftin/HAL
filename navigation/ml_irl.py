@@ -7,7 +7,6 @@ from .sensor import Occupancy
 
 import tensorflow as tf
 import numpy as np
-import time
 
 
 class Agent:
@@ -247,7 +246,7 @@ def builder(beta=1.0,
             online_batches=10):
     """
     Returns a builder which itself returns a context manager which
-    constructs an ML-IRL agent with the given
+    constructs an ML-IRL agent with the given configuration.
 
     :param beta: the temperature parameter for the soft value iteration
     :param gamma: the discount factor

@@ -73,7 +73,7 @@ def evaluate(env, agent, episodes=10, steps=None):
     print("Agent return: " + str(total / episodes))
 
 
-def sensor_experiment(env, sensor, algorithms, sessions=1, demonstrations=5,  baselines=100, steps=None):
+def sensor_experiment(env, sensor, algorithms, sessions=1, demonstrations=10,  baselines=100, steps=None):
     """
     Runs an evaluation of a given set of learning algorithms, uses a sensor model
     that allows the agent to directly observe the environment
