@@ -6,8 +6,10 @@ from .demonstrations import Demonstrations
 from .expert import Expert
 from .visualization import visualize, render
 
+import time
 
-def session(env, sensor, agent, episodes=10, steps=None, interval=50):
+
+def session(env, sensor, agent, episodes=10, steps=None, interval=20):
     """
     Runs a single learning session with a single agent.
 
@@ -20,31 +22,43 @@ def session(env, sensor, agent, episodes=10, steps=None, interval=50):
     :return: a list of total costs (across all tasks) for each episode
     """
 
+    session_start = time.time()
+
     steps = (env.width + env.height) * 4 if steps is None else steps
     costs = []
+
+    simulation_time = 0
+    learning_time = 0
 
     for episode in range(episodes):
         total = 0
 
         for task, _ in env.tasks:
-            print("Episode " + str(episode) + ", task: " + task)
-
             env.reset(task=task)
             agent.task(task)
             sensor.update()
             step = 0
 
             while not env.complete and step < steps:
+
+                start = time.time()
                 env.update(agent.act(env.x, env.y))
                 sensor.update()
                 step += 1
+                simulation_time += time.time() - start
 
                 if 0 == step % interval:
+                    start = time.time()
                     agent.update()
+                    learning_time += time.time() - start
 
             total += step
 
         costs.append(total)
+
+    print("session took " + str(time.time() - session_start) + " seconds in total")
+    print("simulation took " + str(simulation_time) + " seconds")
+    print("learning took " + str(learning_time) + " seconds")
 
     return costs
 
@@ -97,9 +111,13 @@ def sensor_experiment(env, sensor, algorithms, sessions=1, demonstrations=10,  b
     data = Demonstrations()
     baseline = 0.
 
+    demonstration_time = 0
+    baseline_time = 0
+
     for task, _ in env.tasks:
 
         # Generate demonstrations
+        start = time.time()
         expert.task(task)
 
         for _ in range(demonstrations):
@@ -115,7 +133,10 @@ def sensor_experiment(env, sensor, algorithms, sessions=1, demonstrations=10,  b
                 sensor.update()
                 step += 1
 
+        demonstration_time += time.time() - start
+
         # Estimate baseline
+        start = time.time()
         task_baseline = 0.
 
         for _ in range(baselines):
@@ -129,8 +150,12 @@ def sensor_experiment(env, sensor, algorithms, sessions=1, demonstrations=10,  b
             task_baseline += step
 
         baseline += task_baseline / baselines
+        baseline_time += time.time() - start
 
     print("baseline cost: " + str(baseline))
+
+    print("baseline took " + str(baseline_time) + " seconds")
+    print("demonstrations took " + str(demonstration_time) + " seconds")
 
     # Evaluate algorithms
     for name, algorithm in algorithms.items():

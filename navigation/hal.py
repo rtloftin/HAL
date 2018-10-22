@@ -1,5 +1,5 @@
 """
-An implementation of BAM for the robot navigation domain.
+An implementation of the HAL algorithm for the robot navigation domain.
 """
 
 from .environment import Action
@@ -11,7 +11,7 @@ import numpy as np
 
 class Agent:
     """
-    A BAM agent.
+    A HAL agent.
     """
 
     def __init__(self, sensor, data, graph, session, **kwargs):
@@ -144,6 +144,7 @@ class Agent:
                 self._reward_updates[task] = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
                 # Define the action output
+                # self._policies[task] = tf.multinomial(policy_value, 1)
                 self._policies[task] = tf.argmax(policy_value, axis=1)
 
             # Initialize the model
@@ -217,9 +218,9 @@ class Agent:
         :return: the sampled action
         """
 
-        session.run(self._occupancy_update, feed_dict={
-            self._occupancy: self._sensor.map
-        })
+        # return self._session.run(self._policy, feed_dict={
+        #     self._state_input: [(x * self._sensor.height) + y]
+        # })[0, 0]
 
         return self._session.run(self._policy, feed_dict={
             self._policy_input: [(x * self._sensor.height) + y]
@@ -245,6 +246,8 @@ class Agent:
 
 def builder(beta=1.0,
             gamma=0.99,
+            base_depth=10,
+            abstract_depth=10,
             planning_depth=150,
             obstacle_mean=-0.5,
             obstacle_variance=0.2,
@@ -255,7 +258,7 @@ def builder(beta=1.0,
             online_batches=100):
     """
     Returns a builder which itself returns a context manager which
-    constructs an BAM agent with the given configuration
+    constructs an HAL agent with the given configuration.
 
     :param beta: the temperature parameter for the soft value iteration
     :param gamma: the discount factor

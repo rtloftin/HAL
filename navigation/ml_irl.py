@@ -7,6 +7,7 @@ from .sensor import Occupancy
 
 import tensorflow as tf
 import numpy as np
+import time
 
 
 class Agent:
@@ -209,6 +210,10 @@ class Agent:
         :return: the sampled action
         """
 
+        # self._session.run(self._probability_update, feed_dict={
+        #    self._occupancy: self._sensor.map
+        # })
+
         # return self._session.run(self._policy, feed_dict={
         #     self._state_input: [(x * self._sensor.height) + y]
         # })[0, 0]
@@ -243,7 +248,7 @@ def builder(beta=1.0,
             learning_rate=0.01,
             batch_size=64,
             pretrain_batches=100,
-            online_batches=10):
+            online_batches=20):
     """
     Returns a builder which itself returns a context manager which
     constructs an ML-IRL agent with the given configuration.

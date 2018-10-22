@@ -1,5 +1,7 @@
 """
-An implementation of BAM for the robot navigation domain.
+An implementation of multitask ML-IRL for the robot navigation domain.
+
+THIS VERSION STORES THE TRAINING DATA AS A CONSTANT, BUT DOES NOT SEEM TO WORK PROPERLY
 """
 
 from .environment import Action
@@ -7,11 +9,12 @@ from .sensor import Occupancy
 
 import tensorflow as tf
 import numpy as np
+import time
 
 
 class Agent:
     """
-    A BAM agent.
+    A multi-task ML-IRL agent.
     """
 
     def __init__(self, sensor, data, graph, session, **kwargs):
@@ -34,13 +37,12 @@ class Agent:
         gamma = kwargs['gamma']
         beta = kwargs['beta']
         planning_depth = kwargs['planning_depth']
-        obstacle_mean = kwargs['obstacle_mean']
-        obstacle_variance = kwargs['obstacle_variance']
+        obstacle_prior = kwargs['obstacle_prior']
         penalty = kwargs['penalty']
         learning_rate = kwargs['learning_rate']
         pretrain_batches = kwargs['pretrain_batches']
+        batch_size = kwargs['batch_size']
 
-        self._batch_size = kwargs['batch_size']
         self._online_batches = kwargs['online_batches']
 
         # Get the number of states and actions
@@ -48,6 +50,7 @@ class Agent:
         num_actions = len(Action)
 
         # Define the transition structure
+        start = time.time()
         transitions = np.empty([num_states, num_actions, 2], dtype=np.int32)
 
         def cell(x, y, nx, ny, action):
@@ -68,39 +71,33 @@ class Agent:
                 cell(x, y, x - 1, y, Action.LEFT)
                 cell(x, y, x + 1, y, Action.RIGHT)
 
+        print("transitions took " + str(time.time() - start) + " seconds to construct")
+
         # Build planning and learning graph
+        start = time.time()
         with graph.as_default():
 
             # Define transition constant
             transitions = tf.constant(transitions, dtype=tf.int32)
 
-            # Define occupancy mask
+            # Define transition probability model
+            probabilities = tf.Variable(tf.zeros([num_states, num_actions, 2], dtype=tf.float32),
+                                        trainable=False, use_resource=True)
+
             self._occupancy = tf.placeholder(tf.int32, shape=[sensor.width, sensor.height])
             occupancy = tf.reshape(self._occupancy, [num_states])
 
-            visible = tf.Variable(tf.fill([num_states], False), dtype=tf.bool, trainable=False, use_resource=True)
-            occupied = tf.Variable(tf.fill([num_states], False), dtype=tf.bool, trainable=False, use_resource=True)
+            success = tf.zeros([num_states], dtype=tf.float32)
+            success = tf.where(tf.equal(occupancy, Occupancy.CLEAR), tf.ones([num_states], dtype=tf.float32), success)
+            success = tf.where(tf.equal(occupancy, Occupancy.UNKNOWN),
+                               tf.constant(obstacle_prior, dtype=tf.float32, shape=[num_states]), success)
 
-            self._occupancy_update = tf.group(tf.assign(visible, tf.not_equal(occupancy, Occupancy.UNKNOWN)),
-                                              tf.assign(occupied, tf.equal(occupancy, Occupancy.OCCUPIED)))
+            succeed = tf.gather(success, transitions[:, :, 0])
+            fail = tf.gather(1. - success, transitions[:, :, 0])
 
-            # Define dynamics model
-            model = tf.Variable(tf.fill([num_states], obstacle_mean), dtype=tf.float32)
-            model_penalty = tf.reduce_mean(obstacle_variance * tf.square(obstacle_mean - model))
+            self._probability_update = tf.assign(probabilities, tf.stack([succeed, fail], axis=-1))
 
-            # Define transition probabilities
-            probabilities = tf.nn.sigmoid(model)
-            probabilities = tf.where(visible, tf.where(occupied, tf.ones([num_states], dtype=tf.float32),
-                                                       tf.zeros([num_states], dtype=tf.float32)), probabilities)
-
-            succeed = tf.gather(1. - probabilities, transitions[:, :, 0])
-            fail = tf.gather(probabilities, transitions[:, :, 0])
-
-            probabilities = tf.stack([succeed, fail], axis=-1)
-
-            # Define state and action inputs
-            self._state_input = tf.placeholder(tf.int32, shape=[self._batch_size])
-            self._action_input = tf.placeholder(tf.int32, shape=[self._batch_size])
+            # Define policy state input
             self._policy_input = tf.placeholder(tf.int32, shape=[1])
 
             # Define value iteration update
@@ -122,6 +119,23 @@ class Agent:
 
             for task in data.tasks:
 
+                # Insert task data set as a constant - fine because the data sets are not large
+                steps = data.steps(task)
+                states = []
+                actions = []
+
+                for step in steps:
+                    states.append((step.x * sensor.height) + step.y)
+                    actions.append(step.action)
+
+                states = tf.constant(states, dtype=tf.int32)
+                actions = tf.constant(actions, dtype=tf.int32)
+
+                # Define batched data, as we are using random batches
+                indices = tf.random_uniform([batch_size], maxval=len(steps), dtype=tf.int32)
+                states = tf.gather(states, indices)
+                actions = tf.gather(actions, indices)
+
                 # Define the reward function
                 reward = tf.Variable(tf.zeros([num_states], dtype=tf.float32))
                 self._reward_functions[task] = reward
@@ -132,72 +146,59 @@ class Agent:
                 for _ in range(planning_depth):
                     values = update(values, reward)
 
-                policy_value = beta * tf.gather(values, self._policy_input)
-                values = beta * tf.gather(values, self._state_input)
+                batch_values = beta * tf.gather(values, states)
 
                 # Define the action prediction loss
-                partition = tf.log(tf.reduce_sum(tf.exp(values), axis=1))
-                likelihood = tf.reduce_sum(tf.one_hot(self._action_input, num_actions) * values, axis=1)
+                partition = tf.log(tf.reduce_sum(tf.exp(batch_values), axis=1))
+                likelihood = tf.reduce_sum(tf.one_hot(actions, num_actions) * batch_values, axis=1)
 
-                loss = tf.reduce_mean(partition - likelihood)
-                loss = loss + (penalty * tf.reduce_mean(tf.square(reward))) + model_penalty
+                loss = tf.reduce_mean(partition - likelihood) + (penalty * tf.reduce_mean(tf.square(reward)))
                 self._reward_updates[task] = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
                 # Define the action output
-                self._policies[task] = tf.argmax(policy_value, axis=1)
+                policy_value = beta * tf.gather(values, self._policy_input)
+
+                # self._policies[task] = tf.multinomial(policy_values, 1)
+                self._policies[task] = tf.argmax(beta * tf.gather(policy_value, self._policy_input), axis=1)
 
             # Initialize the model
             session.run(tf.global_variables_initializer())
 
+        print("graph construction took " + str(time.time() - start) + " seconds")
+
         # Pre-train the model
-        session.run(self._occupancy_update, feed_dict={
+        start = time.time()
+        session.run(self._probability_update, feed_dict={
             self._occupancy: sensor.map
         })
+        print("occupancy initialization took " + str(time.time() - start) + " seconds")
 
+        start = time.time()
         for task in data.tasks:
             update = self._reward_updates[task]
-            samples = data.steps(task)
 
             for b in range(pretrain_batches):
-                batch = np.random.choice(samples, self._batch_size)
-                states = []
-                actions = []
-
-                for step in batch:
-                    states.append(((step.x * sensor.height) + step.y))
-                    actions.append(step.action)
-
-                session.run(update, feed_dict={
-                    self._state_input: states,
-                    self._action_input: actions
-                })
+                session.run(update)
+        print("training took " + str(time.time() - start) + " seconds")
 
     def update(self):
         """
         Updates the agent's cost estimates to reflect new sensor data.
         """
 
-        self._session.run(self._occupancy_update, feed_dict={
+        start = time.time()
+        self._session.run(self._probability_update, feed_dict={
             self._occupancy: self._sensor.map
         })
+        # print("occupancy update took " + str(time.time() - start) + " seconds")
 
+        start = time.time()
         for task in self._data.tasks:
             update = self._reward_updates[task]
-            samples = self._data.steps(task)
 
-            for _ in range(self._online_batches):
-                batch = np.random.choice(samples, self._batch_size)
-                states = []
-                actions = []
-
-                for step in batch:
-                    states.append((step.x * self._sensor.height) + step.y)
-                    actions.append(step.action)
-
-                self._session.run(update, feed_dict={
-                    self._state_input: states,
-                    self._action_input: actions
-                })
+            for b in range(self._online_batches):
+                self._session.run(update)
+        # print("cost update took " + str(time.time() - start) + " seconds")
 
     def task(self, name):
         """
@@ -217,9 +218,9 @@ class Agent:
         :return: the sampled action
         """
 
-        session.run(self._occupancy_update, feed_dict={
-            self._occupancy: self._sensor.map
-        })
+        # return self._session.run(self._policy, feed_dict={
+        #     self._state_input: [(x * self._sensor.height) + y]
+        # })[0, 0]
 
         return self._session.run(self._policy, feed_dict={
             self._policy_input: [(x * self._sensor.height) + y]
@@ -246,28 +247,26 @@ class Agent:
 def builder(beta=1.0,
             gamma=0.99,
             planning_depth=150,
-            obstacle_mean=-0.5,
-            obstacle_variance=0.2,
+            obstacle_prior=0.2,
             penalty=0.1,
             learning_rate=0.01,
             batch_size=64,
             pretrain_batches=100,
-            online_batches=100):
+            online_batches=20):
     """
     Returns a builder which itself returns a context manager which
-    constructs an BAM agent with the given configuration
+    constructs an ML-IRL agent with the given configuration.
 
     :param beta: the temperature parameter for the soft value iteration
     :param gamma: the discount factor
     :param planning_depth: the number of value iterations to perform
-    :param obstacle_mean: the mean of the log probability of an obstacle
-    :param obstacle_variance: the variance of the log probability
+    :param obstacle_prior: the probability of an obstacle being in an unobserved cell
     :param penalty: the regularization term for the cost functions
     :param learning_rate: the learning rate for training the cost functions
     :param batch_size: the batch size for training the cost functions
     :param pretrain_batches: the number of batch updates to perform to build the initial cost estimates
     :param online_batches: the number of batch updates to perform after each model update
-    :return: a new builder for BAM agents
+    :return: a new builder for ML-IRL agents
     """
 
     def manager(sensor, data):
@@ -282,8 +281,7 @@ def builder(beta=1.0,
                                   beta=beta,
                                   gamma=gamma,
                                   planning_depth=planning_depth,
-                                  obstacle_mean=obstacle_mean,
-                                  obstacle_variance=obstacle_variance,
+                                  obstacle_prior=obstacle_prior,
                                   penalty=penalty,
                                   learning_rate=learning_rate,
                                   batch_size=batch_size,
