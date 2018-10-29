@@ -4,173 +4,171 @@ Defines methods for running learning experiments in the robot navigation domain.
 
 from .demonstrations import Demonstrations
 from .expert import Expert
-from .visualization import visualize, render
 
 import time
+import os
+import numpy as np
+import matplotlib as pl
 
 
-def session(env, sensor, agent, episodes=10, steps=None, interval=20):
+def experiment(algorithms, env, sensor,
+               sessions=5,
+               demonstrations=1,
+               episodes=10,
+               baselines=100,
+               max_steps=None,
+               results_file=None):
     """
-    Runs a single learning session with a single agent.
+    Runs an experiment comparing a collection of algorithms in a given  environment.
 
-    :param env: the environment in which the agent learns
-    :param sensor: the agent's local sensor model
-    :param agent: the learning agent
-    :param episodes: the number of learning episodes to run
-    :param steps: the maximum number of steps per episode
-    :param interval: the number of steps between each learning update
-    :return: a list of total costs (across all tasks) for each episode
-    """
-
-    session_start = time.time()
-
-    steps = (env.width + env.height) * 4 if steps is None else steps
-    costs = []
-
-    simulation_time = 0
-    learning_time = 0
-
-    for episode in range(episodes):
-        total = 0
-
-        for task, _ in env.tasks:
-            env.reset(task=task)
-            agent.task(task)
-            sensor.update()
-            step = 0
-
-            while not env.complete and step < steps:
-
-                start = time.time()
-                env.update(agent.act(env.x, env.y))
-                sensor.update()
-                step += 1
-                simulation_time += time.time() - start
-
-                if 0 == step % interval:
-                    start = time.time()
-                    agent.update()
-                    learning_time += time.time() - start
-
-            total += step
-
-        costs.append(total)
-
-    print("session took " + str(time.time() - session_start) + " seconds in total")
-    print("simulation took " + str(simulation_time) + " seconds")
-    print("learning took " + str(learning_time) + " seconds")
-
-    return costs
-
-
-def evaluate(env, agent, episodes=10, steps=None):
-    steps = (env.width + env.height) * 4 if steps is None else steps
-    total = 0.
-
-    for episode in range(episodes):
-        for task, _ in env.tasks:
-            print("Episode " + str(episode) + ", task: " + task)
-
-            env.reset(task=task)
-            agent.task(task)
-            step = 0
-
-            while not env.complete and step < steps:
-                action = agent.act(env.x, env.y)
-                print("Action: " + str(action))
-
-                env.update(action)
-                step += 1
-
-            total += step
-
-    print("Agent return: " + str(total / episodes))
-
-
-def sensor_experiment(env, sensor, algorithms, sessions=1, demonstrations=10,  baselines=100, steps=None):
-    """
-    Runs an evaluation of a given set of learning algorithms, uses a sensor model
-    that allows the agent to directly observe the environment
-
-    :param env: the navigation environment in which to evaluate the algorithms
-    :param sensor: the base sensor attached to the environment
-    :param algorithms: a dictionary of builders for the different learning agents
-    :param sessions: the number of learning sessions to run for each algorithm
-    :param demonstrations: the number of demonstrations to provide for each task
-    :param baselines: the number of episodes used to compute the expert baseline
-    :param steps: the maximum number of steps to allow per episode
+    :param algorithms: a dictionary of algorithms to evaluate
+    :param env: the environment in which to run the experiments
+    :param sensor: the base sensor model for this environment
+    :param sessions: the number of training sessions to run for each algorithm
+    :param demonstrations: the number of demonstrations to generate for each session
+    :param episodes: the number of episodes of each task to run for each session
+    :param baselines: the number of episodes to run to estimate the expert's performance
+    :param max_steps: the maximum number of steps per episode
+    :param results_file: the file which to store the results, if it exists, create a new file
     """
 
     # Construct expert
     expert = Expert(env)
 
     # Compute step limit if not provided
-    steps = (env.width + env.height) * 4 if steps is None else steps
+    if max_steps is None:
+        max_steps = (env.width + env.height) * 2
 
-    # Generate demonstrations and baseline
-    data = Demonstrations()
-    baseline = 0.
-
-    demonstration_time = 0
-    baseline_time = 0
+    # Generate baseline estimate of expert performance
+    baseline = .0
 
     for task, _ in env.tasks:
-
-        # Generate demonstrations
-        start = time.time()
         expert.task(task)
-
-        for _ in range(demonstrations):
-            env.reset(task=task)
-            sensor.update()
-            data.new(task)
-            step = 0
-
-            while not env.complete and step < steps:
-                action = expert.act(env.x, env.y)
-                data.step(env.x, env.y, action)
-                env.update(action)
-                sensor.update()
-                step += 1
-
-        demonstration_time += time.time() - start
-
-        # Estimate baseline
-        start = time.time()
-        task_baseline = 0.
 
         for _ in range(baselines):
             env.reset(task=task)
             step = 0
 
-            while not env.complete and step < steps:
+            while not env.complete and step < max_steps:
                 env.update(expert.act(env.x, env.y))
                 step += 1
 
-            task_baseline += step
+            baseline += step
 
-        baseline += task_baseline / baselines
-        baseline_time += time.time() - start
+    baseline /= baselines
 
-    print("baseline cost: " + str(baseline))
+    # Initialize results data structure
+    results = dict()
 
-    print("baseline took " + str(baseline_time) + " seconds")
-    print("demonstrations took " + str(demonstration_time) + " seconds")
+    for name in algorithms.keys():
+        results[name] = []
 
-    # Evaluate algorithms
-    for name, algorithm in algorithms.items():
-        for s in range(sessions):
-            print(name + ", session: " + str(s))
-            agent_sensor = sensor.clone()
+    # Run experiments
+    for sess in range(sessions):
+        print("session " + str(sess))
 
-            with algorithm(agent_sensor, data) as agent:
-                # render(agent.rewards(task))
-                # visualize(env, agent_sensor, task=task, expert=agent)
-                # evaluate(env, agent)
+        # Generate demonstrations
+        session_data = Demonstrations()
+        session_sensor = sensor.clone()
 
-                costs = session(env, agent_sensor, agent, steps=steps)
+        for task, _ in env.tasks:
+            expert.task(task)
 
-                for i in range(len(costs)):
-                    costs[i] = costs[i] / baseline
+            for _ in range(demonstrations):
+                env.reset(task=task)
+                session_sensor.update()
+                session_data.new(task)
+                step = 0
 
-                print(costs)
+                while not env.complete and step < max_steps:
+                    action = expert.act(env.x, env.y)
+                    session_data.step(env.x, env.y, action)
+                    env.update(action)
+                    session_sensor.update()
+                    step += 1
+
+        # Evaluate algorithms
+        for name, algorithm in algorithms.items():
+            print("algorithm - " + name)
+
+            agent_sensor = session_sensor.clone()
+            with algorithm(agent_sensor, session_data) as agent:
+                returns = session(agent, env, agent_sensor, episodes=episodes, max_steps=max_steps)
+
+            results[name].append(returns / baseline)
+
+    # Compute means
+    means = dict()
+
+    for algorithm, result in results.items():
+        mean = np.zeros(episodes, dtype=np.float32)
+
+        for returns in result:
+            mean += returns
+
+        means[algorithm] = mean / len(result)
+
+    # Print results
+    for algorithm, mean in means.items():
+        print(algorithm + ": " + str(mean))
+
+    # Save results
+    if results_file is not None:
+        index = 0
+
+        while os.path.exists(results_file + "_" + str(index)):
+            index += 1
+
+        with open(results_file + "_" + str(index), "w") as file:
+            algorithms = means.keys()
+
+            columns = ["episodes"]
+            columns.extend(algorithms)
+            file.write(" ".join(columns) + "\n")
+
+            for episode in range(episodes):
+                row = [str(episode + 1)]
+
+                for algorithm in algorithms:
+                    row.append(str(means[algorithm][episode]))
+
+                file.write(" ".join(row) + "\n")
+
+
+def session(agent, env, sensor, episodes=10, max_steps=100):
+    """
+    Runs a single learning session with a single agent.
+
+    :param agent: the learning agent
+    :param sensor: the agent's local sensor model
+    :param env: the environment in which the agent learns
+    :param episodes: the number of learning episodes to run
+    :param max_steps: the maximum number of steps per episode
+    :param interval: the number of steps between each learning update
+    :return: an array of total costs (across all tasks) for each episode
+    """
+
+    costs = np.empty(episodes, dtype=np.float32)
+
+    for episode in range(episodes):
+        total = 0.
+        start = time.time()
+
+        for task, _ in env.tasks:
+            env.reset(task=task)
+            agent.task(task)
+            sensor.update()
+            step = 0
+
+            while not env.complete and step < max_steps:
+                env.update(agent.act(env.x, env.y))
+                sensor.update()
+                step += 1
+
+            agent.update()
+            total += step
+
+        print("episode took " + str(time.time() - start) + " seconds")
+        costs[episode] = total
+
+    return costs

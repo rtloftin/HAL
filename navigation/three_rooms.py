@@ -16,7 +16,7 @@ def three_rooms():
     # NEW
 
     # Initialize map
-    map = Map(39, 39)
+    map = Map(40, 40)
     map.obstacle(6, 6, 14, 1)
     map.obstacle(6, 19, 14, 1)
     map.obstacle(6, 7, 1, 4)
@@ -35,6 +35,6 @@ def three_rooms():
     env.reset(task="right")
 
     # Initialize sensor model
-    sensor = RoundSensor(env, 2)
+    sensor = RoundSensor(env, 40)
 
     return env, sensor

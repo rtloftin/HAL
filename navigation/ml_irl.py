@@ -84,12 +84,11 @@ class Agent:
             success = tf.zeros([num_states], dtype=tf.float32)
             success = tf.where(tf.equal(occupancy, Occupancy.CLEAR), tf.ones([num_states], dtype=tf.float32), success)
             success = tf.where(tf.equal(occupancy, Occupancy.UNKNOWN),
-                               tf.constant(obstacle_prior, dtype=tf.float32, shape=[num_states]), success)
+                               tf.constant(1. - obstacle_prior, dtype=tf.float32, shape=[num_states]), success)
 
             succeed = tf.gather(success, transitions[:, :, 0])
-            fail = tf.gather(1. - success, transitions[:, :, 0])
 
-            self._probability_update = tf.assign(probabilities, tf.stack([succeed, fail], axis=-1))
+            self._probability_update = tf.assign(probabilities, tf.stack([succeed, 1. - succeed], axis=-1))
 
             # Define state and action inputs
             self._state_input = tf.placeholder(tf.int32, shape=[self._batch_size])
@@ -146,6 +145,12 @@ class Agent:
         session.run(self._probability_update, feed_dict={
             self._occupancy: sensor.map
         })
+
+        # print(session.run(occupancy, feed_dict={
+        #    self._occupancy: sensor.map
+        # }))
+
+        # print(session.run(probabilities))
 
         for task in data.tasks:
             update = self._reward_updates[task]
@@ -210,9 +215,9 @@ class Agent:
         :return: the sampled action
         """
 
-        # self._session.run(self._probability_update, feed_dict={
-        #    self._occupancy: self._sensor.map
-        # })
+        self._session.run(self._probability_update, feed_dict={
+            self._occupancy: self._sensor.map
+        })
 
         # return self._session.run(self._policy, feed_dict={
         #     self._state_input: [(x * self._sensor.height) + y]
@@ -246,9 +251,9 @@ def builder(beta=1.0,
             obstacle_prior=0.2,
             penalty=0.1,
             learning_rate=0.01,
-            batch_size=64,
+            batch_size=128,
             pretrain_batches=100,
-            online_batches=20):
+            online_batches=100):
     """
     Returns a builder which itself returns a context manager which
     constructs an ML-IRL agent with the given configuration.

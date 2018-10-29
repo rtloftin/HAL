@@ -14,7 +14,7 @@ def one_room():
     """
 
     # Initialize map
-    map = Map(26, 26)
+    map = Map(25, 25)
     map.obstacle(6, 6, 14, 1)
     map.obstacle(6, 19, 14, 1)
     map.obstacle(6, 7, 1, 4)
@@ -24,8 +24,8 @@ def one_room():
 
     # Initialize tasks
     tasks = {
-        "top": Task(Region(12, 24, 2, 2), [Region(10, 0, 4, 4)]),
-        "bottom": Task(Region(12, 0, 2, 2), [Region(10, 20, 4, 4)])
+        "top": Task(Region(12, 23, 2, 2), [Region(10, 0, 4, 4)]),
+        "bottom": Task(Region(12, 0, 2, 2), [Region(10, 19, 4, 4)])
     }
 
     # Initialize environment

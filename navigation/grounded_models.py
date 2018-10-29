@@ -26,7 +26,7 @@ class AbstractGrid:
 
         # Unpack parameters
         width = kwargs['width']
-        height = kwarge['height']
+        height = kwargs['height']
         h_step = kwargs['h_step']
         v_step = kwargs['v_step']
         link_mean = kwargs['link_mean']
@@ -43,11 +43,11 @@ class AbstractGrid:
         base_states = width * height
         base_actions = len(Action)
 
-        abstract_width = base_width // horizontal_step
-        abstract_height = base_height // vertical_step
+        abstract_width = width // h_step
+        abstract_height = height // v_step
         abstract_states = abstract_width * abstract_height
         abstract_actions = 4
-        sub_states = horizontal_step * vertical_step
+        sub_states = h_step * v_step
 
         self._base_states = base_states
         self._abstract_states = abstract_states
@@ -67,15 +67,15 @@ class AbstractGrid:
         def base_action(index, nx, ny, action):
             base_current[index, action] = index
 
-            if 0 <= nx < base_width and 0 <= ny < base_height:
-                base_next[index, action] = (nx * base_height) + ny
+            if 0 <= nx < width and 0 <= ny < height:
+                base_next[index, action] = (nx * height) + ny
             else:
                 base_next[index, action] = index
 
-        for x in range(base_width):
-            for y in range(base_height):
-                index = (x * base_height) + y
-                self._base_abstract[index] = ((x // h_step) * abstract_height) + (y // v_step)
+        for x in range(width):
+            for y in range(height):
+                index = (x * height) + y
+                base_abstract[index] = ((x // h_step) * abstract_height) + (y // v_step)
 
                 base_action(index, x, y, Action.STAY)
                 base_action(index, x, y + 1, Action.UP)
@@ -104,17 +104,17 @@ class AbstractGrid:
                 index = (x * abstract_height) + y
 
                 # Abstract actions
-                abstract_action(index, x, y + 1, Action.UP)
-                abstract_action(index, x, y - 1, Action.DOWN)
-                abstract_action(index, x - 1, y, Action.LEFT)
-                abstract_action(index, x + 1, y, Action.RIGHT)
+                abstract_action(index, x, y + 1, 0)
+                abstract_action(index, x, y - 1, 1)
+                abstract_action(index, x - 1, y, 2)
+                abstract_action(index, x + 1, y, 3)
 
                 # Base actions
                 start_x = x * h_step
                 start_y = y * v_step
 
-                for x_offset in range(0, horizontal_step):
-                    for y_offset in range(0, vertical_step):
+                for x_offset in range(0, h_step):
+                    for y_offset in range(0, v_step):
                         base_index = ((start_x + x_offset) * height) + start_y + y
                         abstract_base[index, (x_offset * v_step) + y_offset] = base_index
 
@@ -141,7 +141,7 @@ class AbstractGrid:
         rewards = tf.Variable(tf.zeros([self._base_states], dtype=tf.float32))
 
         # Define the reward penalty
-        penalty = self._reward_penalty * tf.reduce_mean(tf.square(reward))
+        penalty = self._reward_penalty * tf.reduce_mean(tf.square(rewards))
 
         # Define value function
         vb = tf.zeros([self._base_states], dtype=tf.float32)
@@ -167,7 +167,7 @@ class AbstractGrid:
 
             # Compute the abstract value function
             abstract_policy = tf.exp(self._beta * qaa)
-            base_policy = tf.exp(self._beta * qaa)
+            base_policy = tf.exp(self._beta * qab)
             normal = tf.reduce_sum(abstract_policy, axis=1) + tf.reduce_sum(base_policy, axis=1)
             va = (tf.reduce_sum(abstract_policy * qaa, axis=1) + tf.reduce_sum(base_policy * qab, axis=1)) / normal
 
@@ -176,7 +176,7 @@ class AbstractGrid:
         v = tf.where(self._visible, vb, v)
         q_values = self._base_gamma * tf.gather(v, self._base_transitions)
 
-        return q_values, reward, penalty
+        return q_values, rewards, penalty
 
     @property
     def sensor_input(self):

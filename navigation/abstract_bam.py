@@ -35,6 +35,7 @@ class Agent:
         # Unpack configuration
         model_fn = kwargs['model_fn']
         beta = kwargs['beta']
+        learning_rate = kwargs['learning_rate']
         pretrain_batches = kwargs['pretrain_batches']
 
         self._batch_size = kwargs['batch_size']
@@ -149,8 +150,8 @@ class Agent:
         :return: the sampled action
         """
 
-        session.run(self._occupancy_update, feed_dict={
-            self._occupancy: self._sensor.map
+        self._session.run(self._model.sensor_update, feed_dict={
+            self._model.sensor_input: self._sensor.map
         })
 
         return self._session.run(self._policy, feed_dict={
@@ -179,8 +180,8 @@ def builder(model_fn,
             beta=1.0,
             learning_rate=0.01,
             batch_size=64,
-            pretrain_batches=100,
-            online_batches=100):
+            pretrain_batches=500,
+            online_batches=10):
     """
     Returns a builder which itself returns a context manager which
     constructs an BAM agent with the given configuration

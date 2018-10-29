@@ -93,10 +93,9 @@ class Agent:
             probabilities = tf.where(visible, tf.where(occupied, tf.ones([num_states], dtype=tf.float32),
                                                        tf.zeros([num_states], dtype=tf.float32)), probabilities)
 
-            succeed = tf.gather(1. - probabilities, transitions[:, :, 0])
             fail = tf.gather(probabilities, transitions[:, :, 0])
 
-            probabilities = tf.stack([succeed, fail], axis=-1)
+            probabilities = tf.stack([1. - fail, fail], axis=-1)
 
             # Define state and action inputs
             self._state_input = tf.placeholder(tf.int32, shape=[self._batch_size])
@@ -217,7 +216,7 @@ class Agent:
         :return: the sampled action
         """
 
-        session.run(self._occupancy_update, feed_dict={
+        self._session.run(self._occupancy_update, feed_dict={
             self._occupancy: self._sensor.map
         })
 
@@ -250,7 +249,7 @@ def builder(beta=1.0,
             obstacle_variance=0.2,
             penalty=0.1,
             learning_rate=0.01,
-            batch_size=64,
+            batch_size=128,
             pretrain_batches=100,
             online_batches=100):
     """

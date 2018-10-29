@@ -31,9 +31,9 @@ class Expert:
             return (x * env.height) + y
 
         def valid(x, y):
-            if x < 0 or x >= env.height:
+            if x < 0 or x >= env.width:
                 return False
-            if y < 0 or y >= env.width:
+            if y < 0 or y >= env.height:
                 return False
             if env.occupied[x, y]:
                 return False
