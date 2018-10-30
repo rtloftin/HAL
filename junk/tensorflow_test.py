@@ -8,13 +8,14 @@ import collections
 
 sess = tf.Session()
 
-x = [[1, 2, 3], [4, 5, 6]]
+reward = tf.placeholder(tf.float32, shape=[2])
+values = tf.placeholder(tf.float32, shape=[2, 5])
 
-input = tf.placeholder(tf.int32, shape=[2, 3])
-output = tf.reshape(x, [6])
+result = tf.expand_dims(reward, axis=1) * values
 
-print(sess.run(output, feed_dict={
-    input: x
+print(sess.run(result, feed_dict={
+    reward: [1., 2.],
+    values: [[1., 2., 3., 4., 5.], [1., 2., 3., 4., 5.]]
 }))
 
 """

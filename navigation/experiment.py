@@ -90,8 +90,8 @@ def experiment(algorithms, env, sensor,
         # Evaluate algorithms
         for name, algorithm in algorithms.items():
             print("algorithm - " + name)
-
             agent_sensor = session_sensor.clone()
+
             with algorithm(agent_sensor, session_data) as agent:
                 returns = session(agent, env, agent_sensor, episodes=episodes, max_steps=max_steps)
 
@@ -152,6 +152,7 @@ def session(agent, env, sensor, episodes=10, max_steps=100):
 
     for episode in range(episodes):
         total = 0.
+        success = 0
         start = time.time()
 
         for task, _ in env.tasks:
@@ -168,7 +169,12 @@ def session(agent, env, sensor, episodes=10, max_steps=100):
             agent.update()
             total += step
 
+            if env.complete:
+                success += 1
+
         print("episode took " + str(time.time() - start) + " seconds")
+        print("completed " + str(success) + " tasks")
+
         costs[episode] = total
 
     return costs
