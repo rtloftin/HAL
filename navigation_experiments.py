@@ -28,7 +28,7 @@ algorithms["ML-IRL"] = ml_irl
 
 nav.experiment(algorithms, env, sensor,
                demonstrations=50,
-               sessions=10,
+               sessions=5,
                episodes=10,
                max_steps=depth,
                results_file="/home/tyler/Desktop/nav_data")

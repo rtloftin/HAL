@@ -47,21 +47,17 @@ class Agent:
         num_states = sensor.width * sensor.height
         num_actions = len(Action)
 
-        # Define the transition structure
-        num_states = env.width * env.height
-        num_actions = len(Action)
-
         # Define the transition model
-        transitions = np.empty([env.width * env.height, len(Action)], dtype=np.int32)
+        transitions = np.empty([num_states, num_actions], dtype=np.int32)
 
         def next(cell, nx, ny):
             if 0 <= nx < sensor.width and 0 <= ny < sensor.height:
                 return (nx * sensor.height) + ny
             return cell
 
-        for x in range(env.width):
-            for y in range(env.height):
-                cell = (x * env.height) + y
+        for x in range(sensor.width):
+            for y in range(sensor.height):
+                cell = (x * sensor.height) + y
                 transitions[cell, Action.STAY] = cell
                 transitions[cell, Action.UP] = next(cell, x, y + 1)
                 transitions[cell, Action.DOWN] = next(cell, x, y - 1)
@@ -69,47 +65,35 @@ class Agent:
                 transitions[cell, Action.RIGHT] = next(cell, x + 1, y)
 
         # Build planning and learning graph
+        self._reward_functions = dict()
+        self._reward_updates = dict()
+        self._policies = dict()
+        self._policy = None
+
         with graph.as_default():
-
-            # Define transition constant
-            transitions = tf.constant(transitions, dtype=tf.int32)
-
-            # Define transition probability model
-            self._occupancy = tf.placeholder(tf.int32, shape=[sensor.width, sensor.height])
-            occupancy = tf.reshape(self._occupancy, [num_states])
-
-            success = tf.where(tf.equal(occupancy, Occupancy.CLEAR),
-                               tf.ones([num_states], dtype=tf.float32), tf.zeros([num_states], dtype=tf.float32))
-            success = tf.where(tf.equal(occupancy, Occupancy.UNKNOWN),
-                               tf.constant([num_states], 1. - obstacle_prior), success)
-
-            probabilities = tf.Variable(tf.zeros([num_states, num_actions], dtype=tf.float32),
-                                        trainable=False, use_resource=True)
-
-            self._probability_update = tf.assign(probabilities, tf.gather(success, transitions))
 
             # Define state and action inputs
             self._state_input = tf.placeholder(tf.int32, shape=[self._batch_size])
             self._action_input = tf.placeholder(tf.int32, shape=[self._batch_size])
             self._policy_input = tf.placeholder(tf.int32, shape=[1])
 
-            # Define value iteration update
-            def update(q, r):
-                policy = tf.exp(beta * gamma * q)
-                normal = tf.reduce_sum(policy, axis=1)
-                v = r + (gamma * tf.reduce_sum(policy * q, axis=1) / normal)
+            # Define transition constant
+            transitions = tf.constant(transitions, dtype=tf.int32)
 
-                q = tf.gather(v, transitions)
-                q = tf.reduce_sum(probabilities * q, axis=2)
+            # Define transition probability model
+            self._sensor_input = tf.placeholder(tf.int32, shape=[sensor.width, sensor.height])
+            occupancy = tf.reshape(self._sensor_input, [num_states])
 
-                return q
+            success = tf.where(tf.equal(occupancy, Occupancy.CLEAR),
+                               tf.ones([num_states], dtype=tf.float32), tf.zeros([num_states], dtype=tf.float32))
+            success = tf.where(tf.equal(occupancy, Occupancy.UNKNOWN), tf.fill([num_states], 1. - obstacle_prior), success)
+
+            probabilities = tf.Variable(tf.zeros([num_states, num_actions], dtype=tf.float32),
+                                        trainable=False, use_resource=True)
+
+            self._transition_update = tf.assign(probabilities, tf.gather(success, transitions))
 
             # Build individual task models
-            self._reward_functions = dict()
-            self._reward_updates = dict()
-            self._policies = dict()
-            self._policy = None
-
             for task in data.tasks:
 
                 # Define the reward function
@@ -124,8 +108,8 @@ class Agent:
                     normal = tf.reduce_sum(policy, axis=1)
                     v = reward + (gamma * tf.reduce_sum(policy * values, axis=1) / normal)
 
-                    q = tf.gather(v, transitions)
-                    q = tf.reduce_sum(probabilities * q, axis=2)
+                    values = probabilities * tf.gather(v, transitions)
+                    values = values + (tf.expand_dims(v, axis=1) * (1. - probabilities))
 
                 policy_value = beta * tf.gather(values, self._policy_input)
                 values = beta * tf.gather(values, self._state_input)
@@ -144,8 +128,8 @@ class Agent:
             session.run(tf.global_variables_initializer())
 
         # Pre-train the model
-        session.run(self._probability_update, feed_dict={
-            self._occupancy: sensor.map
+        session.run(self._transition_update, feed_dict={
+            self._sensor_input: sensor.map
         })
 
         for task in data.tasks:
@@ -171,8 +155,8 @@ class Agent:
         Updates the agent's cost estimates to reflect new sensor data.
         """
 
-        self._session.run(self._probability_update, feed_dict={
-            self._occupancy: self._sensor.map
+        self._session.run(self._transition_update, feed_dict={
+            self._sensor_input: self._sensor.map
         })
 
         for task in self._data.tasks:
@@ -211,13 +195,9 @@ class Agent:
         :return: the sampled action
         """
 
-        self._session.run(self._probability_update, feed_dict={
-            self._occupancy: self._sensor.map
+        self._session.run(self._transition_update, feed_dict={
+            self._sensor_input: self._sensor.map
         })
-
-        # return self._session.run(self._policy, feed_dict={
-        #     self._state_input: [(x * self._sensor.height) + y]
-        # })[0, 0]
 
         return self._session.run(self._policy, feed_dict={
             self._policy_input: [(x * self._sensor.height) + y]
@@ -246,9 +226,9 @@ def builder(beta=1.0,
             planning_depth=150,
             obstacle_prior=0.2,
             penalty=0.1,
-            learning_rate=0.001,
+            learning_rate=0.01,
             batch_size=128,
-            pretrain_batches=500,
+            pretrain_batches=100,
             online_batches=100):
     """
     Returns a builder which itself returns a context manager which

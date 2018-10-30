@@ -182,7 +182,7 @@ def builder(env,
             penalty=0.1,
             learning_rate=0.01,
             batch_size=128,
-            num_batches=100):
+            num_batches=500):
     """
     Returns a builder which itself returns a context manager which
     constructs a model-based ML-IRL agent with the given configuration.
