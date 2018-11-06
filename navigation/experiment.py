@@ -87,6 +87,9 @@ def experiment(algorithms, env, sensor,
                     session_sensor.update()
                     step += 1
 
+                action = expert.act(env.x, env.y)
+                session_data.step(env.x, env.y, action)
+
         # Evaluate algorithms
         for name, algorithm in algorithms.items():
             print("algorithm - " + name)

@@ -3,7 +3,7 @@ Implements the 'Three Rooms' environment from the document.
 """
 
 from .environment import Environment, Map, Task, Region
-from .sensor import RoundSensor
+from .sensor import RoundSensor, SquareSensor
 
 
 def three_rooms():
@@ -17,17 +17,21 @@ def three_rooms():
 
     # Initialize map
     map = Map(40, 40)
-    map.obstacle(6, 6, 14, 1)
-    map.obstacle(6, 19, 14, 1)
+    map.obstacle(6, 6, 27, 1)
+    map.obstacle(6, 19, 27, 1)
+    map.obstacle(6, 32, 27, 1)
     map.obstacle(6, 7, 1, 4)
-    map.obstacle(6, 15, 1, 4)
-    map.obstacle(19, 7, 1, 4)
-    map.obstacle(19, 15, 1, 4)
+    map.obstacle(6, 15, 1, 9)
+    map.obstacle(6, 28, 1, 4)
+    map.obstacle(32, 7, 1, 4)
+    map.obstacle(32, 15, 1, 9)
+    map.obstacle(32, 28, 1, 4)
+    map.obstacle(19, 7, 1, 12)
 
     # Initialize tasks
     tasks = {
-        "right": Task(Region(37, 18, 2, 3), [Region(0, 17, 2, 4)]),
-        "left": Task(Region(0, 18, 2, 3), [Region(37, 17, 2, 4)])
+        "right": Task(Region(38, 19, 2, 2), [Region(0, 18, 4, 4), Region(0, 8, 4, 4), Region(0, 28, 4, 4)]),
+        "left": Task(Region(0, 19, 2, 2), [Region(36, 18, 4, 4), Region(36, 8, 4, 4), Region(36, 28, 4, 4)])
     }
 
     # Initialize environment
@@ -35,6 +39,6 @@ def three_rooms():
     env.reset(task="right")
 
     # Initialize sensor model
-    sensor = RoundSensor(env, 40)
+    sensor = RoundSensor(env, 4)
 
     return env, sensor

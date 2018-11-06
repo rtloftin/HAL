@@ -86,7 +86,8 @@ class Agent:
 
             success = tf.where(tf.equal(occupancy, Occupancy.CLEAR),
                                tf.ones([num_states], dtype=tf.float32), tf.zeros([num_states], dtype=tf.float32))
-            success = tf.where(tf.equal(occupancy, Occupancy.UNKNOWN), tf.fill([num_states], 1. - obstacle_prior), success)
+            success = tf.where(tf.equal(occupancy, Occupancy.UNKNOWN),
+                               tf.fill([num_states], 1. - obstacle_prior), success)
 
             probabilities = tf.Variable(tf.zeros([num_states, num_actions], dtype=tf.float32),
                                         trainable=False, use_resource=True)
@@ -225,11 +226,11 @@ def builder(beta=1.0,
             gamma=0.99,
             planning_depth=150,
             obstacle_prior=0.2,
-            penalty=0.1,
-            learning_rate=0.01,
+            penalty=100.,
+            learning_rate=0.001,
             batch_size=128,
             pretrain_batches=100,
-            online_batches=100):
+            online_batches=50):
     """
     Returns a builder which itself returns a context manager which
     constructs a model-based ML-IRL agent with the given configuration.

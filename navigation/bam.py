@@ -48,70 +48,52 @@ class Agent:
         num_actions = len(Action)
 
         # Define the transition structure
-        transitions = np.empty([num_states, num_actions, 2], dtype=np.int32)
+        transitions = np.empty([num_states, num_actions], dtype=np.int32)
 
-        def cell(x, y, nx, ny, action):
-            current = (x * sensor.height) + y
-
+        def next(cell, nx, ny):
             if 0 <= nx < sensor.width and 0 <= ny < sensor.height:
-                transitions[current, action, 0] = (nx * sensor.height) + ny
-            else:
-                transitions[current, action, 0] = current
-
-            transitions[current, action, 1] = current
+                return (nx * sensor.height) + ny
+            return cell
 
         for x in range(sensor.width):
             for y in range(sensor.height):
-                cell(x, y, x, y, Action.STAY)
-                cell(x, y, x, y + 1, Action.UP)
-                cell(x, y, x, y - 1, Action.DOWN)
-                cell(x, y, x - 1, y, Action.LEFT)
-                cell(x, y, x + 1, y, Action.RIGHT)
+                cell = (x * sensor.height) + y
+                transitions[cell, Action.STAY] = cell
+                transitions[cell, Action.UP] = next(cell, x, y + 1)
+                transitions[cell, Action.DOWN] = next(cell, x, y - 1)
+                transitions[cell, Action.LEFT] = next(cell, x - 1, y)
+                transitions[cell, Action.RIGHT] = next(cell, x + 1, y)
 
         # Build planning and learning graph
         with graph.as_default():
-
-            # Define transition constant
-            transitions = tf.constant(transitions, dtype=tf.int32)
-
-            # Define occupancy mask
-            self._occupancy = tf.placeholder(tf.int32, shape=[sensor.width, sensor.height])
-            occupancy = tf.reshape(self._occupancy, [num_states])
-
-            visible = tf.Variable(tf.fill([num_states], False), dtype=tf.bool, trainable=False, use_resource=True)
-            occupied = tf.Variable(tf.fill([num_states], False), dtype=tf.bool, trainable=False, use_resource=True)
-
-            self._occupancy_update = tf.group(tf.assign(visible, tf.not_equal(occupancy, Occupancy.UNKNOWN)),
-                                              tf.assign(occupied, tf.equal(occupancy, Occupancy.OCCUPIED)))
-
-            # Define dynamics model
-            model = tf.Variable(tf.fill([num_states], obstacle_mean), dtype=tf.float32)
-            model_penalty = tf.reduce_mean(obstacle_variance * tf.square(obstacle_mean - model))
-
-            # Define transition probabilities
-            probabilities = tf.nn.sigmoid(model)
-            probabilities = tf.where(visible, tf.where(occupied, tf.ones([num_states], dtype=tf.float32),
-                                                       tf.zeros([num_states], dtype=tf.float32)), probabilities)
-
-            fail = tf.gather(probabilities, transitions[:, :, 0])
-
-            probabilities = tf.stack([1. - fail, fail], axis=-1)
 
             # Define state and action inputs
             self._state_input = tf.placeholder(tf.int32, shape=[self._batch_size])
             self._action_input = tf.placeholder(tf.int32, shape=[self._batch_size])
             self._policy_input = tf.placeholder(tf.int32, shape=[1])
 
-            # Define value iteration update
-            def update(q, r):
-                policy = tf.exp(beta * gamma * q)
-                normal = tf.reduce_sum(policy, axis=1)
-                v = r + (gamma * tf.reduce_sum(policy * q, axis=1) / normal)
+            # Define transition constant
+            transitions = tf.constant(transitions, dtype=tf.int32)
 
-                q = tf.gather(v, transitions)
-                q = tf.reduce_sum(probabilities * q, axis=2)
+            # Define occupancy mask
+            self._sensor_input = tf.placeholder(tf.int32, shape=[sensor.width, sensor.height])
+            occupancy = tf.reshape(self._sensor_input, [num_states])
 
-                return q
+            visible = tf.Variable(tf.fill([num_states], False), dtype=tf.bool, trainable=False, use_resource=True)
+            occupied = tf.Variable(tf.fill([num_states], False), dtype=tf.bool, trainable=False, use_resource=True)
+
+            self._sensor_update = tf.group(tf.assign(visible, tf.not_equal(occupancy, Occupancy.UNKNOWN)),
+                                           tf.assign(occupied, tf.equal(occupancy, Occupancy.OCCUPIED)))
+
+            # Define dynamics model
+            model = tf.Variable(tf.fill([num_states], obstacle_mean), dtype=tf.float32)
+            model_penalty = obstacle_variance * tf.reduce_mean(tf.square(obstacle_mean - model))
+
+            # Define transition probabilities
+            obstacles = tf.nn.sigmoid(model)
+            obstacles = tf.where(visible, tf.where(occupied, tf.ones([num_states], dtype=tf.float32),
+                                                   tf.zeros([num_states], dtype=tf.float32)), obstacles)
+            probabilities = tf.gather(obstacles, transitions)
 
             # Build individual task models
             self._reward_functions = dict()
@@ -129,7 +111,12 @@ class Agent:
                 values = tf.zeros([num_states, num_actions], dtype=tf.float32)
 
                 for _ in range(planning_depth):
-                    values = update(values, reward)
+                    policy = tf.exp(beta * gamma * values)
+                    normal = tf.reduce_sum(policy, axis=1)
+                    v = reward + (gamma * tf.reduce_sum(policy * values, axis=1) / normal)
+
+                    values = (1. - probabilities) * tf.gather(v, transitions)
+                    values = values + (tf.expand_dims(v, axis=1) * probabilities)
 
                 policy_value = beta * tf.gather(values, self._policy_input)
                 values = beta * tf.gather(values, self._state_input)
@@ -149,8 +136,8 @@ class Agent:
             session.run(tf.global_variables_initializer())
 
         # Pre-train the model
-        session.run(self._occupancy_update, feed_dict={
-            self._occupancy: sensor.map
+        session.run(self._sensor_update, feed_dict={
+            self._sensor_input: sensor.map
         })
 
         for task in data.tasks:
@@ -176,8 +163,8 @@ class Agent:
         Updates the agent's cost estimates to reflect new sensor data.
         """
 
-        self._session.run(self._occupancy_update, feed_dict={
-            self._occupancy: self._sensor.map
+        self._session.run(self._sensor_update, feed_dict={
+            self._sensor_input: self._sensor.map
         })
 
         for task in self._data.tasks:
@@ -216,8 +203,8 @@ class Agent:
         :return: the sampled action
         """
 
-        self._session.run(self._occupancy_update, feed_dict={
-            self._occupancy: self._sensor.map
+        self._session.run(self._sensor_update, feed_dict={
+            self._sensor_input: self._sensor.map
         })
 
         return self._session.run(self._policy, feed_dict={
@@ -247,11 +234,11 @@ def builder(beta=1.0,
             planning_depth=150,
             obstacle_mean=-0.5,
             obstacle_variance=0.2,
-            penalty=0.1,
-            learning_rate=0.01,
+            penalty=100.,
+            learning_rate=0.001,
             batch_size=128,
             pretrain_batches=100,
-            online_batches=100):
+            online_batches=50):
     """
     Returns a builder which itself returns a context manager which
     constructs an BAM agent with the given configuration

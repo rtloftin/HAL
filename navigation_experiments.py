@@ -22,13 +22,13 @@ abstract_bam = nav.abstract_bam(grid)
 
 algorithms = dict()
 algorithms["ML-IRL"] = ml_irl
-# algorithms["Model-Based"] = model_based
-# algorithms["BAM"] = bam
-# algorithm["Abstract-BAM"] = abstract_bam
+algorithms["Model-Based"] = model_based
+algorithms["BAM"] = bam
+# algorithms["Abstract-BAM"] = abstract_bam
 
 nav.experiment(algorithms, env, sensor,
-               demonstrations=50,
-               sessions=5,
+               demonstrations=1,
+               sessions=10,
                episodes=10,
                max_steps=depth,
                results_file="/home/tyler/Desktop/nav_data")

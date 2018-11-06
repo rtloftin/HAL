@@ -178,10 +178,10 @@ class Agent:
 
 def builder(model_fn,
             beta=1.0,
-            learning_rate=0.01,
-            batch_size=64,
-            pretrain_batches=500,
-            online_batches=10):
+            learning_rate=0.001,
+            batch_size=128,
+            pretrain_batches=100,
+            online_batches=50):
     """
     Returns a builder which itself returns a context manager which
     constructs an BAM agent with the given configuration

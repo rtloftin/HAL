@@ -14,23 +14,24 @@ def one_room():
     """
 
     # Initialize map
-    map = Map(25, 25)
-    map.obstacle(6, 6, 14, 1)
-    map.obstacle(6, 19, 14, 1)
-    map.obstacle(6, 7, 1, 4)
-    map.obstacle(6, 15, 1, 4)
-    map.obstacle(19, 7, 1, 4)
-    map.obstacle(19, 15, 1, 4)
+    map = Map(40, 40)
+    map.obstacle(0, 32, 2, 1)
+    map.obstacle(38, 32, 2, 1)
+    map.obstacle(6, 32, 24, 1)
+    map.obstacle(8, 6, 8, 1)
+    map.obstacle(24, 6, 8, 1)
+    map.obstacle(8, 6, 26, 1)
+    map.obstacle(32, 6, 26, 1)
 
     # Initialize tasks
     tasks = {
-        "top": Task(Region(12, 23, 2, 2), [Region(10, 0, 4, 4)]),
-        "bottom": Task(Region(12, 0, 2, 2), [Region(10, 19, 4, 4)])
+        "right": Task(Region(30, 36, 2, 2), [Region(8, 0, 4, 4), Region(18, 0, 4, 4), Region(28, 0, 4, 4)]),
+        "left": Task(Region(10, 36, 2, 2), [Region(8, 0, 4, 4), Region(18, 0, 4, 4), Region(28, 0, 4, 4)])
     }
 
     # Initialize environment
     env = Environment(map, tasks)
-    env.reset(task="top")
+    env.reset(task="right")
 
     # Initialize sensor model
     sensor = RoundSensor(env, 3)

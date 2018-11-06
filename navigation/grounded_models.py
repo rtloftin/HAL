@@ -33,7 +33,7 @@ class AbstractGrid:
         link_penalty = kwargs['link_penalty']
 
         self._base_gamma = kwargs['gamma']
-        self._abstract_gamma = self._base_gamma ** ((h_step + v_step) / 2)
+        self._abstract_gamma = self._base_gamma ** ((h_step + v_step) // 2)
 
         self._beta = kwargs['beta']
         self._planning_depth = kwargs['planning_depth']
@@ -52,62 +52,53 @@ class AbstractGrid:
         self._base_states = base_states
         self._abstract_states = abstract_states
 
-        # Define sensor map
-        occupancy = tf.Variable(tf.zeros([base_states], tf.int32),
-                                dtype=tf.int32, trainable=False, use_resource=True)
-
-        self._occupancy_input = tf.placeholder(tf.int32, shape=[width, height])
-        self._occupancy_update = tf.assign(occupancy, tf.reshape(self._occupancy_input, [base_states]))
-
         # Define transitions from base states
-        base_current = np.empty([base_states, base_actions], dtype=np.int32)
         base_next = np.empty([base_states, base_actions], dtype=np.int32)
+        base_identity = np.empty([base_states, base_actions], dtype=np.int32)
         base_abstract = np.empty([base_states], dtype=np.int32)
 
-        def base_action(index, nx, ny, action):
-            base_current[index, action] = index
+        def base(cell, nx, ny, action):
+            base_identity[cell, action] = cell
 
             if 0 <= nx < width and 0 <= ny < height:
-                base_next[index, action] = (nx * height) + ny
+                base_next[cell, action] = (nx * height) + ny
             else:
-                base_next[index, action] = index
+                base_next[cell, action] = cell
 
         for x in range(width):
             for y in range(height):
-                index = (x * height) + y
-                base_abstract[index] = ((x // h_step) * abstract_height) + (y // v_step)
+                cell = (x * height) + y
+                base_abstract[cell] = ((x // h_step) * abstract_height) + (y // v_step)
 
-                base_action(index, x, y, Action.STAY)
-                base_action(index, x, y + 1, Action.UP)
-                base_action(index, x, y - 1, Action.DOWN)
-                base_action(index, x - 1, y, Action.LEFT)
-                base_action(index, x + 1, y, Action.RIGHT)
+                base(cell, x, y, Action.STAY)
+                base(cell, x, y + 1, Action.UP)
+                base(cell, x, y - 1, Action.DOWN)
+                base(cell, x - 1, y, Action.LEFT)
+                base(cell, x + 1, y, Action.RIGHT)
 
-        occupied = tf.equal(occupancy, Occupancy.OCCUPIED)
+        base_next = tf.constant(base_next, dtype=tf.int32)
+        base_identity = tf.constant(base_identity, dtype=tf.int32)
 
-        self._visible = tf.not_equal(occupancy, Occupancy.UNKNOWN)
-        self._base_transitions = tf.where(tf.gather(occupied, base_next), base_current, base_next)
         self._base_abstract = tf.constant(base_abstract, dtype=tf.int32)
 
         # Define transitions from abstract states
-        abstract_transitions = np.empty([abstract_states, abstract_actions], dtype=np.int32)
+        abstract_next = np.empty([abstract_states, abstract_actions], dtype=np.int32)
         abstract_base = np.empty([abstract_states, sub_states], dtype=np.int32)
 
-        def abstract_action(index, nx, ny, action):
+        def abstract(cell, nx, ny):
             if 0 <= nx < abstract_width and 0 <= ny < abstract_height:
-                abstract_transitions[index, action] = (nx * abstract_height) + ny
-            else:
-                abstract_transitions[index, action] = index
+                return (nx * abstract_height) + ny
+            return cell
 
         for x in range(abstract_width):
             for y in range(abstract_height):
-                index = (x * abstract_height) + y
+                cell = (x * abstract_height) + y
 
                 # Abstract actions
-                abstract_action(index, x, y + 1, 0)
-                abstract_action(index, x, y - 1, 1)
-                abstract_action(index, x - 1, y, 2)
-                abstract_action(index, x + 1, y, 3)
+                abstract_next[cell, 0] = abstract(cell, x, y + 1)
+                abstract_next[cell, 1] = abstract(cell, x, y - 1)
+                abstract_next[cell, 2] = abstract(cell, x - 1, y)
+                abstract_next[cell, 3] = abstract(cell, x + 1, y)
 
                 # Base actions
                 start_x = x * h_step
@@ -115,17 +106,34 @@ class AbstractGrid:
 
                 for x_offset in range(0, h_step):
                     for y_offset in range(0, v_step):
-                        base_index = ((start_x + x_offset) * height) + start_y + y
-                        abstract_base[index, (x_offset * v_step) + y_offset] = base_index
+                        abstract_base[cell, (x_offset * v_step) + y_offset] = \
+                            ((start_x + x_offset) * height) + start_y + y
 
-        self._abstract_transitions = tf.constant(abstract_transitions, dtype=tf.int32)
+        self._abstract_transitions = tf.constant(abstract_next, dtype=tf.int32)
         self._abstract_base = tf.constant(abstract_base, dtype=tf.int32)
 
         # Define abstract dynamics model
         model = tf.Variable(tf.fill([abstract_states, abstract_actions], link_mean), dtype=tf.float32)
 
+        self._model = tf.nn.sigmoid(model)
         self._model_penalty = link_penalty * tf.reduce_mean(tf.square(link_mean - model))
-        self._abstract_probabilities = tf.nn.sigmoid(model)
+
+        # Define transition update from sensor data
+        self._sensor_input = tf.placeholder(tf.int32, shape=[width, height])
+        sensor = tf.reshape(self._sensor_input, [base_states])
+
+        visible = tf.not_equal(sensor, Occupancy.UNKNOWN)
+        mask = tf.where(tf.equal(sensor, Occupancy.CLEAR), tf.ones([base_states], dtype=tf.float32),
+                        tf.zeros([base_states], dtype=tf.float32))
+        base = tf.where(tf.gather(tf.equal(sensor, Occupancy.OCCUPIED), base_next), base_identity, base_next)
+
+        self._visible = tf.Variable(tf.zeros([base_states], dtype=tf.bool), trainable=False, use_resource=True)
+        self._mask = tf.Variable(tf.zeros([base_states], dtype=tf.float32), trainable=False, use_resource=True)
+        self._base_transitions = tf.Variable(tf.zeros([base_states, base_actions], dtype=tf.int32),
+                                             trainable=False, use_resource=True)
+
+        self._sensor_update = tf.group(tf.assign(self._visible, visible), tf.assign(self._mask, mask),
+                                       tf.assign(self._base_transitions, base))
 
     def task(self):
         """
@@ -148,7 +156,6 @@ class AbstractGrid:
         va = tf.zeros([self._abstract_states], dtype=tf.float32)
 
         for _ in range(self._planning_depth):
-            pass
 
             # Combine value functions
             v = tf.gather(va, self._base_abstract)
@@ -158,8 +165,8 @@ class AbstractGrid:
             qb = self._base_gamma * tf.gather(v, self._base_transitions)
 
             # Compute the abstract Q-function
-            qaa = self._abstract_gamma * self._abstract_probabilities * tf.gather(va, self._abstract_transitions)
-            qab = self._abstract_gamma * tf.gather(vb, self._abstract_base)
+            qaa = self._abstract_gamma * self._model * tf.gather(va, self._abstract_transitions)
+            qab = self._abstract_gamma * tf.gather(self._mask * vb, self._abstract_base)
 
             # Compute the base value function
             policy = tf.exp(self._beta * qb)
@@ -180,11 +187,11 @@ class AbstractGrid:
 
     @property
     def sensor_input(self):
-        return self._occupancy_input
+        return self._sensor_input
 
     @property
     def sensor_update(self):
-        return self._occupancy_update
+        return self._sensor_update
 
     @property
     def penalty(self):
@@ -197,9 +204,9 @@ def abstract_grid(width, height,
                   planning_depth=200,
                   gamma=0.99,
                   beta=1.0,
-                  link_mean=0.5,
-                  link_penalty=0.2,
-                  reward_penalty=0.1):
+                  link_mean=1.,
+                  link_penalty=10.0,
+                  reward_penalty=100.):
     """
     Returns a builder which constructs abstract grid
     objects attached to a given graph and sensor model.
