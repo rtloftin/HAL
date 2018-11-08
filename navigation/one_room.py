@@ -20,8 +20,8 @@ def one_room():
     map.obstacle(6, 32, 24, 1)
     map.obstacle(8, 6, 8, 1)
     map.obstacle(24, 6, 8, 1)
-    map.obstacle(8, 6, 26, 1)
-    map.obstacle(32, 6, 26, 1)
+    map.obstacle(8, 6, 1, 26)
+    map.obstacle(32, 6, 1, 26)
 
     # Initialize tasks
     tasks = {

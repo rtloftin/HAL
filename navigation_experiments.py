@@ -8,8 +8,8 @@ import os
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-# env, sensor = nav.one_room()
-env, sensor = nav.three_rooms()
+env, sensor = nav.one_room()
+# env, sensor = nav.three_rooms()
 
 depth = (env.width + env.height) * 2
 
@@ -27,8 +27,8 @@ algorithms["BAM"] = bam
 # algorithms["Abstract-BAM"] = abstract_bam
 
 nav.experiment(algorithms, env, sensor,
-               demonstrations=1,
-               sessions=10,
+               demonstrations=5,
+               sessions=5,
                episodes=10,
                max_steps=depth,
-               results_file="/home/tyler/Desktop/nav_data")
+               results_file=None)

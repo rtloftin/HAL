@@ -77,7 +77,6 @@ class Agent:
             # Define state and action inputs
             self._state_input = tf.placeholder(tf.int32, shape=[batch_size])
             self._action_input = tf.placeholder(tf.int32, shape=[batch_size])
-            self._policy_input = tf.placeholder(tf.int32, shape=[1])
 
             for task in data.tasks:
 
@@ -94,18 +93,17 @@ class Agent:
                     values = reward + (gamma * tf.reduce_sum(policy * values, axis=1) / normal)
                     values = tf.gather(values, transitions)
 
-                policy_value = beta * gamma * tf.gather(values, self._policy_input)
-                values = beta * gamma * tf.gather(values, self._state_input)
-
                 # Define the action prediction loss
-                partition = tf.log(tf.reduce_sum(tf.exp(values), axis=1))
-                likelihood = tf.reduce_sum(tf.one_hot(self._action_input, num_actions) * values, axis=1)
+                batch_values = beta * gamma * tf.gather(values, self._state_input)
+
+                partition = tf.log(tf.reduce_sum(tf.exp(batch_values), axis=1))
+                likelihood = tf.reduce_sum(tf.one_hot(self._action_input, num_actions) * batch_values, axis=1)
 
                 loss = tf.reduce_mean(partition - likelihood) + (penalty * tf.reduce_mean(tf.square(reward)))
                 self._reward_updates[task] = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
-                # Define the action output
-                self._policies[task] = tf.argmax(policy_value, axis=1)
+                # Define the policy output
+                self._policies[task] = tf.argmax(values, axis=1)
 
             # Initialize the model
             session.run(tf.global_variables_initializer())
@@ -142,7 +140,7 @@ class Agent:
         :param name: the name of the task
         """
 
-        self._policy = self._policies[name]
+        self._policy = self._session.run(self._policies[name])
 
     def act(self, x, y):
         """
@@ -153,9 +151,7 @@ class Agent:
         :return: the sampled action
         """
 
-        return self._session.run(self._policy, feed_dict={
-            self._policy_input: [(x * self._height) + y]
-        })[0]
+        return self._policy[(x * self._height) + y]
 
     def rewards(self, task):
         """
@@ -179,7 +175,7 @@ def builder(env,
             beta=1.0,
             gamma=0.99,
             planning_depth=150,
-            penalty=100.,
+            penalty=50.,
             learning_rate=0.001,
             batch_size=128,
             num_batches=500):

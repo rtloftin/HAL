@@ -16,6 +16,7 @@ def experiment(algorithms, env, sensor,
                demonstrations=1,
                episodes=10,
                baselines=100,
+               evaluations=50,
                max_steps=None,
                results_file=None):
     """
@@ -28,6 +29,7 @@ def experiment(algorithms, env, sensor,
     :param demonstrations: the number of demonstrations to generate for each session
     :param episodes: the number of episodes of each task to run for each session
     :param baselines: the number of episodes to run to estimate the expert's performance
+    :param evaluations: the number of non-training episodes to run to evaluate the agent's policies
     :param max_steps: the maximum number of steps per episode
     :param results_file: the file which to store the results, if it exists, create a new file
     """
@@ -58,10 +60,12 @@ def experiment(algorithms, env, sensor,
     baseline /= baselines
 
     # Initialize results data structure
-    results = dict()
+    costs = dict()
+    successes = dict()
 
     for name in algorithms.keys():
-        results[name] = []
+        costs[name] = []
+        successes[name] = []
 
     # Run experiments
     for sess in range(sessions):
@@ -87,8 +91,8 @@ def experiment(algorithms, env, sensor,
                     session_sensor.update()
                     step += 1
 
-                action = expert.act(env.x, env.y)
-                session_data.step(env.x, env.y, action)
+                # action = expert.act(env.x, env.y)
+                # session_data.step(env.x, env.y, action)
 
         # Evaluate algorithms
         for name, algorithm in algorithms.items():
@@ -96,24 +100,36 @@ def experiment(algorithms, env, sensor,
             agent_sensor = session_sensor.clone()
 
             with algorithm(agent_sensor, session_data) as agent:
-                returns = session(agent, env, agent_sensor, episodes=episodes, max_steps=max_steps)
+                cost, success = session(agent, env, agent_sensor,
+                                        episodes=episodes,
+                                        evaluations=evaluations,
+                                        max_steps=max_steps)
 
-            results[name].append(returns / baseline)
+            costs[name].append(cost / baseline)
+            successes[name].append(success)
 
     # Compute means
-    means = dict()
+    mean_costs = dict()
+    mean_successes = dict()
 
-    for algorithm, result in results.items():
-        mean = np.zeros(episodes, dtype=np.float32)
+    for algorithm in algorithms.keys():
+        mean_cost = np.zeros(episodes, dtype=np.float32)
+        mean_success = np.zeros(episodes, dtype=np.float32)
 
-        for returns in result:
-            mean += returns
+        for cost in costs[algorithm]:
+            mean_cost += cost
 
-        means[algorithm] = mean / len(result)
+        for success in successes[algorithm]:
+            mean_success += success
+
+        mean_costs[algorithm] = mean_cost / len(costs[algorithm])
+        mean_successes[algorithm] = mean_success / len(successes[algorithm])
 
     # Print results
-    for algorithm, mean in means.items():
-        print(algorithm + ": " + str(mean))
+    for algorithm in algorithms.keys():
+        print(algorithm + " ----")
+        print("mean cost: " + str(mean_costs[algorithm]))
+        print("mean success rate: " + str(mean_successes[algorithm]))
 
     # Save results
     if results_file is not None:
@@ -123,7 +139,7 @@ def experiment(algorithms, env, sensor,
             index += 1
 
         with open(results_file + "_" + str(index), "w") as file:
-            algorithms = means.keys()
+            algorithms = algorithms.keys()
 
             columns = ["episodes"]
             columns.extend(algorithms)
@@ -133,12 +149,12 @@ def experiment(algorithms, env, sensor,
                 row = [str(episode + 1)]
 
                 for algorithm in algorithms:
-                    row.append(str(means[algorithm][episode]))
+                    row.append(str(mean_costs[algorithm][episode]))
 
                 file.write(" ".join(row) + "\n")
 
 
-def session(agent, env, sensor, episodes=10, max_steps=100):
+def session(agent, env, sensor, episodes=10, evaluations=50, max_steps=100):
     """
     Runs a single learning session with a single agent.
 
@@ -146,18 +162,18 @@ def session(agent, env, sensor, episodes=10, max_steps=100):
     :param sensor: the agent's local sensor model
     :param env: the environment in which the agent learns
     :param episodes: the number of learning episodes to run
+    :param evaluations: the number of non-training episodes to run to evaluate the agent's policies
     :param max_steps: the maximum number of steps per episode
-    :param interval: the number of steps between each learning update
-    :return: an array of total costs (across all tasks) for each episode
+    :return: the average number of steps required at teach episode, the average number of tasks completed
     """
 
     costs = np.empty(episodes, dtype=np.float32)
+    successes = np.empty(episodes, dtype=np.float32)
 
     for episode in range(episodes):
-        total = 0.
-        success = 0
         start = time.time()
 
+        # Run learning episode
         for task, _ in env.tasks:
             env.reset(task=task)
             agent.task(task)
@@ -169,15 +185,32 @@ def session(agent, env, sensor, episodes=10, max_steps=100):
                 sensor.update()
                 step += 1
 
-            agent.update()
-            total += step
+        # Update agent
+        agent.update()
 
-            if env.complete:
-                success += 1
+        # Evaluate policies
+        steps = 0.
+        success = 0.
 
-        print("episode took " + str(time.time() - start) + " seconds")
-        print("completed " + str(success) + " tasks")
+        for task, _ in env.tasks:
+            agent.task(task)
 
-        costs[episode] = total
+            for _ in range(evaluations):
+                env.reset(task=task)
+                step = 0
 
-    return costs
+                while not env.complete and step < max_steps:
+                    env.update(agent.act(env.x, env.y))
+                    step += 1
+
+                steps += step
+
+                if env.complete:
+                    success += 1
+
+        costs[episode] = steps / evaluations
+        successes[episode] = success / (evaluations * len(env.tasks))
+
+        print("episode took " + str(time.time() - start) + " seconds, success rate: " + str(successes[episode]))
+
+    return costs, successes
