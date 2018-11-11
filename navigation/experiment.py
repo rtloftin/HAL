@@ -18,7 +18,7 @@ def experiment(algorithms, env, sensor,
                baselines=100,
                evaluations=200,
                max_steps=None,
-               results_file=None):
+               results_dir=None):
     """
     Runs an experiment comparing a collection of algorithms in a given  environment.
 
@@ -31,7 +31,7 @@ def experiment(algorithms, env, sensor,
     :param baselines: the number of episodes to run to estimate the expert's performance
     :param evaluations: the number of non-training episodes to run to evaluate the agent's policies
     :param max_steps: the maximum number of steps per episode
-    :param results_file: the file which to store the results, if it exists, create a new file
+    :param results_dir: the directory in which to store the results
     """
 
     # Construct expert
@@ -131,24 +131,32 @@ def experiment(algorithms, env, sensor,
         print("mean success rate: " + str(mean_successes[algorithm]))
 
     # Save results
-    if results_file is not None:
-        index = 0
+    if results_dir is not None:
+        algorithms = algorithms.keys()
 
-        while os.path.exists(results_file + "_" + str(index)):
-            index += 1
+        columns = ["episodes"]
+        columns.extend(algorithms)
+        columns = " ".join(columns)
 
-        with open(results_file + "_" + str(index), "w") as file:
-            algorithms = algorithms.keys()
-
-            columns = ["episodes"]
-            columns.extend(algorithms)
-            file.write(" ".join(columns) + "\n")
+        with open(results_dir + "/returns", "w") as file:
+            file.write(columns + "\n")
 
             for episode in range(episodes):
                 row = [str(episode + 1)]
 
                 for algorithm in algorithms:
                     row.append(str(mean_costs[algorithm][episode]))
+
+                file.write(" ".join(row) + "\n")
+
+        with open(results_dir + "/success_rates", "w") as file:
+            file.write(columns + "\n")
+
+            for episode in range(episodes):
+                row = [str(episode + 1)]
+
+                for algorithm in algorithms:
+                    row.append(str(mean_successes[algorithm][episode]))
 
                 file.write(" ".join(row) + "\n")
 

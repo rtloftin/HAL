@@ -65,19 +65,18 @@ class Agent:
                 self._reward_functions[task] = rewards
 
                 # Define state values
-                policy_value = beta * tf.gather(values, self._policy_input)
-                values = beta * tf.gather(values, self._state_input)
+                batch_values = beta * tf.gather(values, self._state_input)
 
                 # Define the action prediction loss
-                partition = tf.log(tf.reduce_sum(tf.exp(values), axis=1))
-                likelihood = tf.reduce_sum(tf.one_hot(self._action_input, len(Action)) * values, axis=1)
+                partition = tf.log(tf.reduce_sum(tf.exp(batch_values), axis=1))
+                likelihood = tf.reduce_sum(tf.one_hot(self._action_input, len(Action)) * batch_values, axis=1)
 
                 loss = tf.reduce_mean(partition - likelihood)
                 loss = loss + penalty + self._model.penalty
                 self._reward_updates[task] = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
                 # Define the action output
-                self._policies[task] = tf.argmax(policy_value, axis=1)
+                self._policies[task] = tf.argmax(values, axis=1)
 
             # Initialize the model
             session.run(tf.global_variables_initializer())
@@ -139,7 +138,11 @@ class Agent:
         :param name: the name of the task
         """
 
-        self._policy = self._policies[name]
+        self._session.run(self._model.sensor_update, feed_dict={
+            self._model.sensor_input: self._sensor.map
+        })
+
+        self._policy = self._session.run(self._policies[name])
 
     def act(self, x, y):
         """
@@ -150,13 +153,7 @@ class Agent:
         :return: the sampled action
         """
 
-        self._session.run(self._model.sensor_update, feed_dict={
-            self._model.sensor_input: self._sensor.map
-        })
-
-        return self._session.run(self._policy, feed_dict={
-            self._policy_input: [(x * self._sensor.height) + y]
-        })[0]
+        return self._policy[(x * self._sensor.height) + y]
 
     def rewards(self, task):
         """
