@@ -29,9 +29,14 @@ def three_rooms():
     map.obstacle(19, 7, 1, 12)
 
     # Initialize tasks
+    # tasks = {
+    #    "right": Task(Region(38, 19, 1, 1), [Region(0, 18, 4, 4), Region(0, 8, 4, 4), Region(0, 28, 4, 4)]),
+    #    "left": Task(Region(0, 19, 1, 1), [Region(36, 18, 4, 4), Region(36, 8, 4, 4), Region(36, 28, 4, 4)])
+    # }
+
     tasks = {
-        "right": Task(Region(38, 19, 2, 2), [Region(0, 18, 4, 4), Region(0, 8, 4, 4), Region(0, 28, 4, 4)]),
-        "left": Task(Region(0, 19, 2, 2), [Region(36, 18, 4, 4), Region(36, 8, 4, 4), Region(36, 28, 4, 4)])
+       "right": Task(Region(38, 19, 1, 1), [Region(0, 18, 4, 4)]),
+       "left": Task(Region(0, 19, 1, 1), [Region(36, 18, 4, 4)])
     }
 
     # Initialize environment

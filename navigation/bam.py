@@ -190,6 +190,10 @@ class Agent:
         :param name: the name of the task
         """
 
+        self._session.run(self._sensor_update, feed_dict={
+            self._sensor_input: self._sensor.map
+        })
+
         self._policy = self._session.run(self._policies[name])
 
     def act(self, x, y):
@@ -226,7 +230,7 @@ def builder(beta=1.0,
             planning_depth=150,
             obstacle_mean=-0.5,
             obstacle_variance=0.2,
-            penalty=50.,
+            penalty=100.,
             learning_rate=0.001,
             batch_size=128,
             pretrain_batches=100,

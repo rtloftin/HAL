@@ -24,11 +24,11 @@ algorithms = dict()
 algorithms["ML-IRL"] = ml_irl
 algorithms["Model-Based"] = model_based
 algorithms["BAM"] = bam
-# algorithms["Abstract-BAM"] = abstract_bam
+algorithms["Abstract-BAM"] = abstract_bam
 
 nav.experiment(algorithms, env, sensor,
                demonstrations=5,
-               sessions=5,
+               sessions=10,
                episodes=10,
                max_steps=depth,
                results_file=None)

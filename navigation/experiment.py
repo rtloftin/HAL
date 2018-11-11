@@ -16,7 +16,7 @@ def experiment(algorithms, env, sensor,
                demonstrations=1,
                episodes=10,
                baselines=100,
-               evaluations=50,
+               evaluations=200,
                max_steps=None,
                results_file=None):
     """
@@ -91,8 +91,7 @@ def experiment(algorithms, env, sensor,
                     session_sensor.update()
                     step += 1
 
-                # action = expert.act(env.x, env.y)
-                # session_data.step(env.x, env.y, action)
+                session_data.step(env.x, env.y, expert.act(env.x, env.y))
 
         # Evaluate algorithms
         for name, algorithm in algorithms.items():
@@ -176,11 +175,11 @@ def session(agent, env, sensor, episodes=10, evaluations=50, max_steps=100):
         # Run learning episode
         for task, _ in env.tasks:
             env.reset(task=task)
-            agent.task(task)
             sensor.update()
             step = 0
 
             while not env.complete and step < max_steps:
+                agent.task(task)
                 env.update(agent.act(env.x, env.y))
                 sensor.update()
                 step += 1

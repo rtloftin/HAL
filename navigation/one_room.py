@@ -25,8 +25,8 @@ def one_room():
 
     # Initialize tasks
     tasks = {
-        "right": Task(Region(30, 36, 2, 2), [Region(8, 0, 4, 4), Region(18, 0, 4, 4), Region(28, 0, 4, 4)]),
-        "left": Task(Region(10, 36, 2, 2), [Region(8, 0, 4, 4), Region(18, 0, 4, 4), Region(28, 0, 4, 4)])
+        "right": Task(Region(30, 36, 1, 1), [Region(8, 0, 4, 4), Region(18, 0, 4, 4), Region(28, 0, 4, 4)]),
+        "left": Task(Region(10, 36, 1, 1), [Region(8, 0, 4, 4), Region(18, 0, 4, 4), Region(28, 0, 4, 4)])
     }
 
     # Initialize environment

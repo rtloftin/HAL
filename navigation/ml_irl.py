@@ -175,7 +175,7 @@ def builder(env,
             beta=1.0,
             gamma=0.99,
             planning_depth=150,
-            penalty=50.,
+            penalty=100.,
             learning_rate=0.001,
             batch_size=128,
             num_batches=500):
