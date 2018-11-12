@@ -79,25 +79,31 @@ grid = nav.abstract_grid(env.width, env.height,
                          link_penalty=10.0,
                          reward_penalty=100.)
 
+dummy = nav.dummy_grid(env.width, env.height,
+                       planning_depth=depth,
+                       gamma=0.99,
+                       beta=1.0,
+                       reward_penalty=100.)
+
 abstract_bam = nav.abstract_bam(grid,
                                 beta=1.0,
                                 learning_rate=0.001,
                                 batch_size=128,
-                                pretrain_batches=100,
+                                pretrain_batches=500,
                                 online_batches=50)
 
 # Select algorithms
 algorithms = dict()
-algorithms["ML-IRL"] = ml_irl
-algorithms["Model-Based"] = model_based
-algorithms["BAM"] = bam
-# algorithms["Abstract-BAM"] = abstract_bam
+# algorithms["ML-IRL"] = ml_irl
+# algorithms["Model-Based"] = model_based
+# algorithms["BAM"] = bam
+algorithms["Abstract-BAM"] = abstract_bam
 
 # run experiments
 nav.experiment(algorithms, env, sensor,
-               sessions=30,
+               sessions=10,
                demonstrations=100,
-               episodes=20,
+               episodes=10,
                baselines=100,
                evaluations=200,
                max_steps=depth,

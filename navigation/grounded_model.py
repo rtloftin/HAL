@@ -170,7 +170,7 @@ class AbstractGrid:
 
             # Compute the base value function
             policy = tf.exp(self._beta * qb)
-            vb = rewards + tf.reduce_sum(policy * qb) / tf.reduce_sum(policy, axis=1)
+            vb = rewards + tf.reduce_sum(policy * qb, axis=1) / tf.reduce_sum(policy, axis=1)
 
             # Compute the abstract value function
             abstract_policy = tf.exp(self._beta * qaa)

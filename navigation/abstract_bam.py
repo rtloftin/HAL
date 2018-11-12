@@ -71,8 +71,8 @@ class Agent:
                 partition = tf.log(tf.reduce_sum(tf.exp(batch_values), axis=1))
                 likelihood = tf.reduce_sum(tf.one_hot(self._action_input, len(Action)) * batch_values, axis=1)
 
-                loss = tf.reduce_mean(partition - likelihood)
-                loss = loss + penalty + self._model.penalty
+                # loss = tf.reduce_mean(partition - likelihood) + penalty + self._model.penalty
+                loss = tf.reduce_mean(partition - likelihood) + penalty + self._model.penalty
                 self._reward_updates[task] = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
                 # Define the action output
