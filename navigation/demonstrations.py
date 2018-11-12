@@ -91,6 +91,8 @@ class Demonstrations:
         :return: a list of trajectories
         """
 
+        return self._trajectories[task]
+
     def steps(self, task):
         """
         Gets a list of all the state-action pairs demonstrated for a task.

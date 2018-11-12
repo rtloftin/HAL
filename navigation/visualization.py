@@ -12,7 +12,7 @@ def visualize(env, sensor, task=None, expert=None):
     Uses the Pyglet game engine.
     """
 
-    # Select the task if one is nt provided
+    # Select the task if one is not provided
     if task is None:
         task = list(env.tasks)[0][0]
 
@@ -27,7 +27,7 @@ def visualize(env, sensor, task=None, expert=None):
     sensor.update()
 
     # Set the size in pixels of each drawn cell
-    scale = 20
+    scale = 15
 
     # Set up the Pyglet window
     window = pg.window.Window(env.width * scale, env.height * scale)
