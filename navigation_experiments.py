@@ -53,7 +53,7 @@ model_based = nav.model_based(beta=1.0,
                               penalty=100.,
                               learning_rate=0.001,
                               batch_size=128,
-                              pretrain_batches=200,
+                              pretrain_batches=100,
                               online_batches=50)
 
 # Standard BAM
@@ -65,7 +65,7 @@ bam = nav.bam(beta=1.0,
               penalty=100.,
               learning_rate=0.001,
               batch_size=128,
-              pretrain_batches=200,
+              pretrain_batches=100,
               online_batches=50)
 
 # Abstract BAM
@@ -79,17 +79,11 @@ grid = nav.abstract_grid(env.width, env.height,
                          link_penalty=10.0,
                          reward_penalty=100.)
 
-dummy = nav.dummy_grid(env.width, env.height,
-                       planning_depth=depth,
-                       gamma=0.99,
-                       beta=1.0,
-                       reward_penalty=100.)
-
 abstract_bam = nav.abstract_bam(grid,
                                 beta=1.0,
                                 learning_rate=0.001,
                                 batch_size=128,
-                                pretrain_batches=200,
+                                pretrain_batches=100,
                                 online_batches=50)
 
 # Select algorithms
@@ -101,7 +95,7 @@ algorithms["Abstract-BAM"] = abstract_bam
 
 # run experiments
 nav.experiment(algorithms, env, sensor,
-               sessions=30,
+               sessions=50,
                demonstrations=10,
                episodes=10,
                baselines=100,

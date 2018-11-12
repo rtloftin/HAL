@@ -69,7 +69,10 @@ class Expert:
         self._policies = dict()
         self._policy = None
 
-        with tf.Session(graph=graph) as sess:
+        gpu_options = tf.GPUOptions(allow_growth=True)
+        config = tf.ConfigProto(gpu_options=gpu_options)
+
+        with tf.Session(graph=graph, config=config) as sess:
             reward = np.empty(env.width * env.height, dtype=np.float32)
 
             for name, task in env.tasks:

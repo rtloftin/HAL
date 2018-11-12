@@ -248,7 +248,10 @@ def builder(beta=1.0,
         class Manager:
             def __enter__(self):
                 self._graph = tf.Graph()
-                self._session = tf.Session(graph=self._graph)
+
+                gpu_options = tf.GPUOptions(allow_growth=True)
+                config = tf.ConfigProto(gpu_options=gpu_options)
+                self._session = tf.Session(graph=self._graph, config=config)
 
                 try:
                     agent = Agent(sensor, data, self._graph, self._session,
