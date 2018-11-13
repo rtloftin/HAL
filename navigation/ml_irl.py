@@ -41,6 +41,7 @@ class Agent:
         learning_rate = kwargs['learning_rate']
         batch_size = kwargs['batch_size']
         num_batches = kwargs['num_batches']
+        rms_prop = kwargs['rms_prop']
 
         # Get the number of states and actions
         num_states = env.width * env.height
@@ -100,7 +101,11 @@ class Agent:
                 likelihood = tf.reduce_sum(tf.one_hot(self._action_input, num_actions) * batch_values, axis=1)
 
                 loss = tf.reduce_mean(partition - likelihood) + (penalty * tf.reduce_mean(tf.square(reward)))
-                self._reward_updates[task] = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
+
+                if rms_prop:
+                    self._reward_updates[task] = tf.train.RMSPropOptimizer(learning_rate=learning_rate).minimize(loss)
+                else:
+                    self._reward_updates[task] = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
                 # Define the policy output
                 self._policies[task] = tf.argmax(values, axis=1)
@@ -178,7 +183,8 @@ def builder(env,
             penalty=100.,
             learning_rate=0.001,
             batch_size=128,
-            num_batches=500):
+            num_batches=500,
+            rms_prop=False):
     """
     Returns a builder which itself returns a context manager which
     constructs a model-based ML-IRL agent with the given configuration.
@@ -191,6 +197,7 @@ def builder(env,
     :param learning_rate: the learning rate for training the cost functions
     :param batch_size: the batch size for training the cost functions
     :param num_batches: the number of batch updates to perform to find the cost estimates
+    :param rms_prop: whether to use RMSProp updates instead of the default Adam updates
     :return: a new builder for ML-IRL agents
     """
 
@@ -212,7 +219,8 @@ def builder(env,
                                   penalty=penalty,
                                   learning_rate=learning_rate,
                                   batch_size=batch_size,
-                                  num_batches=num_batches)
+                                  num_batches=num_batches,
+                                  rms_prop=rms_prop)
                 except Exception as e:
                     self._session.close()
                     raise e

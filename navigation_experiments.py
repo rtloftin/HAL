@@ -41,9 +41,10 @@ ml_irl = nav.ml_irl(env,
                     gamma=0.99,
                     planning_depth=depth,
                     penalty=100.,
-                    learning_rate=0.001,
+                    learning_rate=0.01,
                     batch_size=128,
-                    num_batches=500)
+                    num_batches=100,
+                    rms_prop=True)
 
 # Model-Based IRL
 model_based = nav.model_based(beta=1.0,
@@ -51,10 +52,11 @@ model_based = nav.model_based(beta=1.0,
                               planning_depth=depth,
                               obstacle_prior=0.2,
                               penalty=100.,
-                              learning_rate=0.001,
+                              learning_rate=0.01,
                               batch_size=128,
                               pretrain_batches=100,
-                              online_batches=50)
+                              online_batches=10,
+                              rms_prop=True)
 
 # Standard BAM
 bam = nav.bam(beta=1.0,
@@ -63,10 +65,11 @@ bam = nav.bam(beta=1.0,
               obstacle_mean=-0.5,
               obstacle_variance=0.2,
               penalty=100.,
-              learning_rate=0.001,
+              learning_rate=0.01,
               batch_size=128,
               pretrain_batches=100,
-              online_batches=50)
+              online_batches=10,
+              rms_prop=True)
 
 # Abstract BAM
 grid = nav.abstract_grid(env.width, env.height,
@@ -81,10 +84,11 @@ grid = nav.abstract_grid(env.width, env.height,
 
 abstract_bam = nav.abstract_bam(grid,
                                 beta=1.0,
-                                learning_rate=0.001,
+                                learning_rate=0.01,
                                 batch_size=128,
                                 pretrain_batches=100,
-                                online_batches=50)
+                                online_batches=10,
+                                rms_prop=True)
 
 # Select algorithms
 algorithms = dict()
@@ -95,7 +99,7 @@ algorithms["Abstract-BAM"] = abstract_bam
 
 # run experiments
 nav.experiment(algorithms, env, sensor,
-               sessions=50,
+               sessions=10,
                demonstrations=10,
                episodes=10,
                baselines=100,
