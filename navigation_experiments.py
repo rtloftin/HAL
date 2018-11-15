@@ -43,10 +43,10 @@ ml_irl = nav.ml_irl(env,
                     gamma=0.99,
                     planning_depth=depth,
                     penalty=100.,
-                    learning_rate=0.01,
+                    learning_rate=0.001,
                     batch_size=128,
-                    num_batches=100,
-                    rms_prop=True)
+                    num_batches=500,
+                    rms_prop=False)
 
 # Model-Based IRL
 model_based = nav.model_based(beta=1.0,
@@ -56,8 +56,8 @@ model_based = nav.model_based(beta=1.0,
                               penalty=100.,
                               learning_rate=0.001,
                               batch_size=128,
-                              pretrain_batches=100,
-                              online_batches=20,
+                              pretrain_batches=500,
+                              online_batches=100,
                               rms_prop=False)
 
 # Standard BAM
@@ -69,8 +69,8 @@ bam = nav.bam(beta=1.0,
               penalty=100.,
               learning_rate=0.001,
               batch_size=128,
-              pretrain_batches=100,
-              online_batches=50,
+              pretrain_batches=500,
+              online_batches=100,
               rms_prop=False)
 
 # Abstract BAM
@@ -106,36 +106,36 @@ grid_2 = nav.abstract_grid(env.width, env.height,
 
 abstract_bam_10 = nav.abstract_bam(grid_10,
                                    beta=1.0,
-                                   learning_rate=0.01,
+                                   learning_rate=0.001,
                                    batch_size=128,
-                                   pretrain_batches=100,
-                                   online_batches=10,
-                                   rms_prop=True)
+                                   pretrain_batches=500,
+                                   online_batches=100,
+                                   rms_prop=False)
 
 abstract_bam_5 = nav.abstract_bam(grid_5,
                                   beta=1.0,
-                                  learning_rate=0.01,
+                                  learning_rate=0.001,
                                   batch_size=128,
-                                  pretrain_batches=100,
-                                  online_batches=10,
-                                  rms_prop=True)
+                                  pretrain_batches=500,
+                                  online_batches=100,
+                                  rms_prop=False)
 
 abstract_bam_2 = nav.abstract_bam(grid_2,
                                   beta=1.0,
-                                  learning_rate=0.01,
+                                  learning_rate=0.001,
                                   batch_size=128,
-                                  pretrain_batches=100,
-                                  online_batches=10,
-                                  rms_prop=True)
+                                  pretrain_batches=500,
+                                  online_batches=100,
+                                  rms_prop=False)
 
 # Select algorithms
 algorithms = dict()
-# algorithms["ML-IRL"] = ml_irl
+algorithms["ML-IRL"] = ml_irl
 algorithms["Model-Based"] = model_based
-# algorithms["BAM"] = bam
-# algorithms["Abstract-BAM-2x2"] = abstract_bam_10
-# algorithms["Abstract-BAM-5x5"] = abstract_bam_5
-# algorithms["Abstract-BAM-2x2"] = abstract_bam_2
+algorithms["BAM"] = bam
+algorithms["Abstract-BAM-2x2"] = abstract_bam_10
+algorithms["Abstract-BAM-5x5"] = abstract_bam_5
+algorithms["Abstract-BAM-2x2"] = abstract_bam_2
 
 # run experiments
 nav.experiment(algorithms, env, sensor,

@@ -66,10 +66,10 @@ class Agent:
                 self._reward_functions[task] = rewards
 
                 # Define state values
-                batch_values = beta * tf.gather(values, self._state_input)
+                batch_values = tf.gather(values, self._state_input)
                 mean = tf.expand_dims(tf.reduce_mean(batch_values, axis=1), axis=1)
                 variance = 0.001 + tf.expand_dims(tf.reduce_mean(tf.square(batch_values - mean), axis=1), axis=1)
-                normalized = beta * gamma * ((batch_values - mean) / tf.sqrt(variance))
+                normalized = beta * ((batch_values - mean) / tf.sqrt(variance))
 
                 # Define the action prediction loss
                 partition = tf.log(tf.reduce_sum(tf.exp(normalized), axis=1))

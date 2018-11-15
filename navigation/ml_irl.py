@@ -95,7 +95,7 @@ class Agent:
                     values = tf.gather(values, transitions)
 
                 # Define the action prediction loss
-                batch_values = beta * gamma * tf.gather(values, self._state_input)
+                batch_values = tf.gather(values, self._state_input)
                 mean = tf.expand_dims(tf.reduce_mean(batch_values, axis=1), axis=1)
                 variance = 0.001 + tf.expand_dims(tf.reduce_mean(tf.square(batch_values - mean), axis=1), axis=1)
                 normalized = beta * gamma * ((batch_values - mean) / tf.sqrt(variance))
