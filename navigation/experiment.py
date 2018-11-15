@@ -112,8 +112,8 @@ def experiment(algorithms, env, sensor,
     mean_successes = dict()
 
     for algorithm in algorithms.keys():
-        mean_cost = np.zeros(episodes, dtype=np.float32)
-        mean_success = np.zeros(episodes, dtype=np.float32)
+        mean_cost = np.zeros(episodes + 1, dtype=np.float32)
+        mean_success = np.zeros(episodes + 1, dtype=np.float32)
 
         for cost in costs[algorithm]:
             mean_cost += cost
@@ -141,8 +141,8 @@ def experiment(algorithms, env, sensor,
         with open(results_dir + "/returns", "w") as file:
             file.write(columns + "\n")
 
-            for episode in range(episodes):
-                row = [str(episode + 1)]
+            for episode in range(episodes + 1):
+                row = [str(episode)]
 
                 for algorithm in algorithms:
                     row.append(str(mean_costs[algorithm][episode]))
@@ -152,8 +152,8 @@ def experiment(algorithms, env, sensor,
         with open(results_dir + "/success_rates", "w") as file:
             file.write(columns + "\n")
 
-            for episode in range(episodes):
-                row = [str(episode + 1)]
+            for episode in range(episodes + 1):
+                row = [str(episode)]
 
                 for algorithm in algorithms:
                     row.append(str(mean_successes[algorithm][episode]))
@@ -174,13 +174,21 @@ def session(agent, env, sensor, episodes=10, evaluations=50, max_steps=100):
     :return: the average number of steps required at teach episode, the average number of tasks completed
     """
 
-    costs = np.empty(episodes, dtype=np.float32)
-    successes = np.empty(episodes, dtype=np.float32)
+    costs = np.empty(episodes + 1, dtype=np.float32)
+    successes = np.empty(episodes + 1, dtype=np.float32)
 
+    # Evaluate initial policy
+    cost, success = evaluate(agent, env, evaluations=evaluations, max_steps=max_steps)
+    costs[0] = cost
+    successes[0] = success
+
+    print("initial success rate: " + str(success))
+
+    # Run episodes
     for episode in range(episodes):
         start = time.time()
 
-        # Run learning episode
+        # Run exploration episodes
         for task, _ in env.tasks:
             env.reset(task=task)
             sensor.update()
@@ -192,32 +200,50 @@ def session(agent, env, sensor, episodes=10, evaluations=50, max_steps=100):
                 sensor.update()
                 step += 1
 
-        # Update agent
-        agent.update()
+            # Update agent
+            agent.update()
 
         # Evaluate policies
-        steps = 0.
-        success = 0.
+        cost, success = evaluate(agent, env, evaluations=evaluations, max_steps=max_steps)
+        costs[episode + 1] = cost
+        successes[episode + 1] = success
 
-        for task, _ in env.tasks:
-            agent.task(task)
-
-            for _ in range(evaluations):
-                env.reset(task=task)
-                step = 0
-
-                while not env.complete and step < max_steps:
-                    env.update(agent.act(env.x, env.y))
-                    step += 1
-
-                steps += step
-
-                if env.complete:
-                    success += 1
-
-        costs[episode] = steps / evaluations
-        successes[episode] = success / (evaluations * len(env.tasks))
-
-        print("episode took " + str(time.time() - start) + " seconds, success rate: " + str(successes[episode]))
+        print("episode took " + str(time.time() - start) + " seconds, success rate: " + str(success))
 
     return costs, successes
+
+
+def evaluate(agent, env, evaluations=50, max_steps=100):
+    """
+    Evaluates the agent's current policy.
+
+    :param agent: the agent to evaluate
+    :param env: the environment in which to evaluate the agent
+    :param evaluations: the number of evaluation episodes to run
+    :param max_steps:
+    :return: the mean number of steps, the success rate
+    """
+
+    steps = 0.
+    success = 0.
+
+    for task, _ in env.tasks:
+        agent.task(task)
+
+        for _ in range(evaluations):
+            env.reset(task=task)
+            step = 0
+
+            while not env.complete and step < max_steps:
+                env.update(agent.act(env.x, env.y))
+                step += 1
+
+            steps += step
+
+            if env.complete:
+                success += 1
+
+    steps /= evaluations
+    success /= evaluations * len(env.tasks)
+
+    return steps, success

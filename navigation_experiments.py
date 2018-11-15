@@ -32,6 +32,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 # Construct environment
 env, sensor = nav.one_room()
 # env, sensor = nav.three_rooms()
+# env, sensor = nav.big_one_room()
+# env, sensor = nav.big_three_rooms()
 
 depth = (env.width + env.height) * 2
 
@@ -52,11 +54,11 @@ model_based = nav.model_based(beta=1.0,
                               planning_depth=depth,
                               obstacle_prior=0.2,
                               penalty=100.,
-                              learning_rate=0.01,
+                              learning_rate=0.001,
                               batch_size=128,
                               pretrain_batches=100,
-                              online_batches=10,
-                              rms_prop=True)
+                              online_batches=20,
+                              rms_prop=False)
 
 # Standard BAM
 bam = nav.bam(beta=1.0,
@@ -65,42 +67,80 @@ bam = nav.bam(beta=1.0,
               obstacle_mean=-0.5,
               obstacle_variance=0.2,
               penalty=100.,
-              learning_rate=0.01,
+              learning_rate=0.001,
               batch_size=128,
               pretrain_batches=100,
-              online_batches=10,
-              rms_prop=True)
+              online_batches=50,
+              rms_prop=False)
 
 # Abstract BAM
-grid = nav.abstract_grid(env.width, env.height,
-                         h_step=2,
-                         v_step=2,
-                         planning_depth=depth,
-                         gamma=0.99,
-                         beta=1.0,
-                         link_mean=1.,
-                         link_penalty=10.0,
-                         reward_penalty=100.)
+grid_10 = nav.abstract_grid(env.width, env.height,
+                            h_step=10,
+                            v_step=10,
+                            planning_depth=depth,
+                            gamma=0.99,
+                            beta=1.0,
+                            link_mean=1.,
+                            link_penalty=0.0,
+                            reward_penalty=100.)
 
-abstract_bam = nav.abstract_bam(grid,
-                                beta=1.0,
-                                learning_rate=0.01,
-                                batch_size=128,
-                                pretrain_batches=100,
-                                online_batches=10,
-                                rms_prop=True)
+grid_5 = nav.abstract_grid(env.width, env.height,
+                           h_step=5,
+                           v_step=5,
+                           planning_depth=depth,
+                           gamma=0.99,
+                           beta=1.0,
+                           link_mean=1.,
+                           link_penalty=0.0,
+                           reward_penalty=100.)
+
+grid_2 = nav.abstract_grid(env.width, env.height,
+                           h_step=2,
+                           v_step=2,
+                           planning_depth=depth,
+                           gamma=0.99,
+                           beta=1.0,
+                           link_mean=1.,
+                           link_penalty=0.0,
+                           reward_penalty=100.)
+
+abstract_bam_10 = nav.abstract_bam(grid_10,
+                                   beta=1.0,
+                                   learning_rate=0.01,
+                                   batch_size=128,
+                                   pretrain_batches=100,
+                                   online_batches=10,
+                                   rms_prop=True)
+
+abstract_bam_5 = nav.abstract_bam(grid_5,
+                                  beta=1.0,
+                                  learning_rate=0.01,
+                                  batch_size=128,
+                                  pretrain_batches=100,
+                                  online_batches=10,
+                                  rms_prop=True)
+
+abstract_bam_2 = nav.abstract_bam(grid_2,
+                                  beta=1.0,
+                                  learning_rate=0.01,
+                                  batch_size=128,
+                                  pretrain_batches=100,
+                                  online_batches=10,
+                                  rms_prop=True)
 
 # Select algorithms
 algorithms = dict()
-algorithms["ML-IRL"] = ml_irl
+# algorithms["ML-IRL"] = ml_irl
 algorithms["Model-Based"] = model_based
-algorithms["BAM"] = bam
-algorithms["Abstract-BAM"] = abstract_bam
+# algorithms["BAM"] = bam
+# algorithms["Abstract-BAM-2x2"] = abstract_bam_10
+# algorithms["Abstract-BAM-5x5"] = abstract_bam_5
+# algorithms["Abstract-BAM-2x2"] = abstract_bam_2
 
 # run experiments
 nav.experiment(algorithms, env, sensor,
                sessions=10,
-               demonstrations=10,
+               demonstrations=1,
                episodes=10,
                baselines=100,
                evaluations=200,

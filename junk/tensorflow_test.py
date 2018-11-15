@@ -8,14 +8,11 @@ import collections
 
 sess = tf.Session()
 
-reward = tf.placeholder(tf.float32, shape=[2])
-values = tf.placeholder(tf.float32, shape=[2, 5])
+values = tf.placeholder(tf.float32, shape=[3, 4])
+mean, variance = tf.nn.moments(values, axes=[1], keep_dims=True)
 
-result = tf.expand_dims(reward, axis=1) * values
-
-print(sess.run(result, feed_dict={
-    reward: [1., 2.],
-    values: [[1., 2., 3., 4., 5.], [1., 2., 3., 4., 5.]]
+print(sess.run([mean, variance], feed_dict={
+    values: [[1., 2., 3., 4.], [1., 1., 1., 1.], [-1., -1., -1., -1.]]
 }))
 
 """

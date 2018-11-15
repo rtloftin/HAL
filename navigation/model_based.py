@@ -71,6 +71,9 @@ class Agent:
         self._policies = dict()
         self._policy = None
 
+        self._values = dict()
+        self._value = None
+
         with graph.as_default():
 
             # Define state and action inputs
@@ -113,10 +116,13 @@ class Agent:
                     values = values + (tf.expand_dims(v, axis=1) * (1. - probabilities))
 
                 # Define the action prediction loss
-                batch_values = beta * gamma * tf.gather(values, self._state_input)
+                batch_values = tf.gather(values, self._state_input)
+                mean = tf.expand_dims(tf.reduce_mean(batch_values, axis=1), axis=1)
+                variance = 0.001 + tf.expand_dims(tf.reduce_mean(tf.square(batch_values - mean), axis=1), axis=1)
+                normalized = beta * gamma * ((batch_values - mean) / tf.sqrt(variance))
 
-                partition = tf.log(tf.reduce_sum(tf.exp(batch_values), axis=1))
-                likelihood = tf.reduce_sum(tf.one_hot(self._action_input, num_actions) * batch_values, axis=1)
+                partition = tf.log(tf.reduce_sum(tf.exp(normalized), axis=1))
+                likelihood = tf.reduce_sum(tf.one_hot(self._action_input, num_actions) * normalized, axis=1)
 
                 loss = tf.reduce_mean(partition - likelihood) + (penalty * tf.reduce_mean(tf.square(reward)))
 
@@ -127,6 +133,9 @@ class Agent:
 
                 # Define the action output
                 self._policies[task] = tf.argmax(values, axis=1)
+
+                # Define value function output
+                self._values[task] = values
 
             # Initialize the model
             session.run(tf.global_variables_initializer())
@@ -193,6 +202,7 @@ class Agent:
         })
 
         self._policy = self._session.run(self._policies[name])
+        # self._value = self._session.run(self._values[name])
 
     def act(self, x, y):
         """
@@ -202,6 +212,8 @@ class Agent:
         :param y: the agent's y coordinate
         :return: the sampled action
         """
+
+        # print("policy values: " + str(self._value[(x * self._sensor.height) + y]))
 
         return self._policy[(x * self._sensor.height) + y]
 

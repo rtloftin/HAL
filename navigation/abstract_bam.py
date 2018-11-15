@@ -67,10 +67,13 @@ class Agent:
 
                 # Define state values
                 batch_values = beta * tf.gather(values, self._state_input)
+                mean = tf.expand_dims(tf.reduce_mean(batch_values, axis=1), axis=1)
+                variance = 0.001 + tf.expand_dims(tf.reduce_mean(tf.square(batch_values - mean), axis=1), axis=1)
+                normalized = beta * gamma * ((batch_values - mean) / tf.sqrt(variance))
 
                 # Define the action prediction loss
-                partition = tf.log(tf.reduce_sum(tf.exp(batch_values), axis=1))
-                likelihood = tf.reduce_sum(tf.one_hot(self._action_input, len(Action)) * batch_values, axis=1)
+                partition = tf.log(tf.reduce_sum(tf.exp(normalized), axis=1))
+                likelihood = tf.reduce_sum(tf.one_hot(self._action_input, len(Action)) * normalized, axis=1)
 
                 # loss = tf.reduce_mean(partition - likelihood) + penalty + self._model.penalty
                 loss = tf.reduce_mean(partition - likelihood) + penalty + self._model.penalty
