@@ -33,8 +33,6 @@ class AbstractGrid:
         link_penalty = kwargs['link_penalty']
 
         self._base_gamma = kwargs['gamma']
-        self._abstract_gamma = self._base_gamma ** ((h_step + v_step) // 2)
-
         self._beta = kwargs['beta']
         self._planning_depth = kwargs['planning_depth']
         self._reward_penalty = kwargs['reward_penalty']
@@ -51,6 +49,8 @@ class AbstractGrid:
 
         self._base_states = base_states
         self._abstract_states = abstract_states
+
+        self._abstract_gamma = np.power(self._base_gamma, ((h_step + v_step) // 2))
 
         # Define transitions from base states
         base_next = np.empty([base_states, base_actions], dtype=np.int32)
@@ -115,8 +115,8 @@ class AbstractGrid:
         # Define abstract dynamics model
         model = tf.Variable(tf.fill([abstract_states, abstract_actions], link_mean), dtype=tf.float32)
 
-        self._model = tf.nn.sigmoid(model)
         self._model_penalty = link_penalty * tf.reduce_mean(tf.square(link_mean - model))
+        self._model = tf.nn.sigmoid(model)
 
         # Define transition update from sensor data
         self._sensor_input = tf.placeholder(tf.int32, shape=[width, height])

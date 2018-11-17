@@ -21,7 +21,7 @@ def big_one_room():
     map.obstacle(16, 12, 16, 1)
     map.obstacle(48, 12, 16, 1)
     map.obstacle(16, 12, 1, 52)
-    map.obstacle(62, 12, 1, 52)
+    map.obstacle(63, 12, 1, 52)
 
     # Initialize tasks
     # tasks = {
@@ -30,7 +30,7 @@ def big_one_room():
     # }
 
     tasks = {
-        "right": Task(Region(48, 72, 1, 1), [Region(0, 0, 80, 8)]),
+        "right": Task(Region(50, 72, 1, 1), [Region(0, 0, 80, 8)]),
         "left": Task(Region(30, 72, 1, 1), [Region(0, 0, 80, 8)])
     }
 

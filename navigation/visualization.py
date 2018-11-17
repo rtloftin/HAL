@@ -27,7 +27,7 @@ def visualize(env, sensor, task=None, expert=None):
     sensor.update()
 
     # Set the size in pixels of each drawn cell
-    scale = 15
+    scale = 10
 
     # Set up the Pyglet window
     window = pg.window.Window(env.width * scale, env.height * scale)

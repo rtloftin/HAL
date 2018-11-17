@@ -9,6 +9,7 @@ from .sensor import Occupancy
 
 import tensorflow as tf
 import numpy as np
+import time
 
 
 class Agent:
@@ -44,6 +45,8 @@ class Agent:
 
         # Build planning and learning graph
         with graph.as_default():
+
+            start = time.time()
 
             # Construct dynamics model
             self._model = model_fn()
@@ -86,6 +89,9 @@ class Agent:
                 # Define the action output
                 self._policies[task] = tf.argmax(values, axis=1)
 
+            print("abstract graph construction took " + str(time.time() - start) + " seconds")
+            start = time.time()
+
             # Initialize the model
             session.run(tf.global_variables_initializer())
 
@@ -111,6 +117,8 @@ class Agent:
                     self._state_input: states,
                     self._action_input: actions
                 })
+
+        print("abstract training took " + str(time.time() - start) + " seconds")
 
     def update(self):
         """
