@@ -46,8 +46,6 @@ class Agent:
         # Build planning and learning graph
         with graph.as_default():
 
-            start = time.time()
-
             # Construct dynamics model
             self._model = model_fn()
 
@@ -78,7 +76,6 @@ class Agent:
                 partition = tf.log(tf.reduce_sum(tf.exp(normalized), axis=1))
                 likelihood = tf.reduce_sum(tf.one_hot(self._action_input, len(Action)) * normalized, axis=1)
 
-                # loss = tf.reduce_mean(partition - likelihood) + penalty + self._model.penalty
                 loss = tf.reduce_mean(partition - likelihood) + penalty + self._model.penalty
 
                 if rms_prop:
@@ -88,9 +85,6 @@ class Agent:
 
                 # Define the action output
                 self._policies[task] = tf.argmax(values, axis=1)
-
-            print("abstract graph construction took " + str(time.time() - start) + " seconds")
-            start = time.time()
 
             # Initialize the model
             session.run(tf.global_variables_initializer())
@@ -117,8 +111,6 @@ class Agent:
                     self._state_input: states,
                     self._action_input: actions
                 })
-
-        print("abstract training took " + str(time.time() - start) + " seconds")
 
     def update(self):
         """

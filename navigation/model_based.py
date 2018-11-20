@@ -40,6 +40,7 @@ class Agent:
         learning_rate = kwargs['learning_rate']
         pretrain_batches = kwargs['pretrain_batches']
         rms_prop = kwargs['rms_prop']
+        use_baseline = kwargs['use_baseline']
 
         self._batch_size = kwargs['batch_size']
         self._online_batches = kwargs['online_batches']
@@ -108,7 +109,12 @@ class Agent:
                 values = tf.zeros([num_states, num_actions], dtype=tf.float32)
 
                 for _ in range(planning_depth):
-                    policy = tf.exp(beta * gamma * values)
+                    if use_baseline:
+                        baseline = tf.expand_dims(tf.reduce_mean(values, axis=1), axis=1)
+                        policy = tf.exp(beta * gamma * (values - baseline))
+                    else:
+                        policy = tf.exp(beta * gamma * values)
+
                     normal = tf.reduce_sum(policy, axis=1)
                     v = reward + (gamma * tf.reduce_sum(policy * values, axis=1) / normal)
 
@@ -244,7 +250,8 @@ def builder(beta=1.0,
             batch_size=128,
             pretrain_batches=100,
             online_batches=50,
-            rms_prop=False):
+            rms_prop=False,
+            use_baseline=False):
     """
     Returns a builder which itself returns a context manager which
     constructs a model-based ML-IRL agent with the given configuration.
@@ -259,6 +266,7 @@ def builder(beta=1.0,
     :param pretrain_batches: the number of batch updates to perform to build the initial cost estimates
     :param online_batches: the number of batch updates to perform after each model update
     :param rms_prop: whether to use RMSProp updates instead of the default Adam updates
+    :param use_baseline: whether to use a mean baseline when computing intermediate policies
     :return: a new builder for ML-IRL agents
     """
 
@@ -283,7 +291,8 @@ def builder(beta=1.0,
                                   batch_size=batch_size,
                                   pretrain_batches=pretrain_batches,
                                   online_batches=online_batches,
-                                  rms_prop=rms_prop)
+                                  rms_prop=rms_prop,
+                                  use_baseline=use_baseline)
                 except Exception as e:
                     self._session.close()
                     raise e

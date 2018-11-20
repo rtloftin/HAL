@@ -14,6 +14,7 @@ from .ml_irl import builder as ml_irl
 from .model_based import builder as model_based
 from .bam import builder as bam
 from .abstract_bam import builder as abstract_bam
+from .hal import builder as hal
 from .grounded_model import abstract_grid
 from .dummy_model import dummy_grid
 

@@ -1,5 +1,7 @@
 """
-An implementation of the HAL algorithm for the robot navigation domain.
+An implementation of HAL for the robot navigation domain.
+
+TODO: Figure out how this should actually work
 """
 
 from .environment import Action
@@ -7,21 +9,22 @@ from .sensor import Occupancy
 
 import tensorflow as tf
 import numpy as np
+import time
 
 
 class Agent:
     """
-    A HAL agent.
+    A BAM agent.
     """
 
-    def __init__(self, sensor, data, graph, session, **kwargs):
+    def __init__(self, graph, session, sensor, data, **kwargs):
         """
         Constructs the agent and initializes the cost function estimates.
 
-        :param sensor: the sensor model used to observe the environment
-        :param data: the demonstrated state-action trajectories
         :param graph: the TensorFlow graph for the agent to use
         :param session: the TensorFlow session for the agent to use
+        :param sensor: the sensor model used to observe the environment
+        :param data: the demonstrated state-action trajectories
         :param kwargs: the configuration parameters for the agent.
         """
 
@@ -31,88 +34,26 @@ class Agent:
         self._session = session
 
         # Unpack configuration
-        gamma = kwargs['gamma']
+        model_fn = kwargs['model_fn']
         beta = kwargs['beta']
-        planning_depth = kwargs['planning_depth']
-        obstacle_mean = kwargs['obstacle_mean']
-        obstacle_variance = kwargs['obstacle_variance']
-        penalty = kwargs['penalty']
+        bellman_weight = kwargs['bellman_weight']
         learning_rate = kwargs['learning_rate']
         pretrain_batches = kwargs['pretrain_batches']
+        rms_prop = kwargs['rms_prop']
 
         self._batch_size = kwargs['batch_size']
         self._online_batches = kwargs['online_batches']
 
-        # Get the number of states and actions
-        num_states = sensor.width * sensor.height
-        num_actions = len(Action)
-
-        # Define the transition structure
-        transitions = np.empty([num_states, num_actions, 2], dtype=np.int32)
-
-        def cell(x, y, nx, ny, action):
-            current = (x * sensor.height) + y
-
-            if 0 <= nx < sensor.width and 0 <= ny < sensor.height:
-                transitions[current, action, 0] = (nx * sensor.height) + ny
-            else:
-                transitions[current, action, 0] = current
-
-            transitions[current, action, 1] = current
-
-        for x in range(sensor.width):
-            for y in range(sensor.height):
-                cell(x, y, x, y, Action.STAY)
-                cell(x, y, x, y + 1, Action.UP)
-                cell(x, y, x, y - 1, Action.DOWN)
-                cell(x, y, x - 1, y, Action.LEFT)
-                cell(x, y, x + 1, y, Action.RIGHT)
-
         # Build planning and learning graph
         with graph.as_default():
 
-            # Define transition constant
-            transitions = tf.constant(transitions, dtype=tf.int32)
-
-            # Define occupancy mask
-            self._occupancy = tf.placeholder(tf.int32, shape=[sensor.width, sensor.height])
-            occupancy = tf.reshape(self._occupancy, [num_states])
-
-            visible = tf.Variable(tf.fill([num_states], False), dtype=tf.bool, trainable=False, use_resource=True)
-            occupied = tf.Variable(tf.fill([num_states], False), dtype=tf.bool, trainable=False, use_resource=True)
-
-            self._occupancy_update = tf.group(tf.assign(visible, tf.not_equal(occupancy, Occupancy.UNKNOWN)),
-                                              tf.assign(occupied, tf.equal(occupancy, Occupancy.OCCUPIED)))
-
-            # Define dynamics model
-            model = tf.Variable(tf.fill([num_states], obstacle_mean), dtype=tf.float32)
-            model_penalty = tf.reduce_mean(obstacle_variance * tf.square(obstacle_mean - model))
-
-            # Define transition probabilities
-            probabilities = tf.nn.sigmoid(model)
-            probabilities = tf.where(visible, tf.where(occupied, tf.ones([num_states], dtype=tf.float32),
-                                                       tf.zeros([num_states], dtype=tf.float32)), probabilities)
-
-            succeed = tf.gather(1. - probabilities, transitions[:, :, 0])
-            fail = tf.gather(probabilities, transitions[:, :, 0])
-
-            probabilities = tf.stack([succeed, fail], axis=-1)
+            # Construct dynamics model
+            self._model = model_fn()
 
             # Define state and action inputs
             self._state_input = tf.placeholder(tf.int32, shape=[self._batch_size])
             self._action_input = tf.placeholder(tf.int32, shape=[self._batch_size])
             self._policy_input = tf.placeholder(tf.int32, shape=[1])
-
-            # Define value iteration update
-            def update(q, r):
-                policy = tf.exp(beta * gamma * q)
-                normal = tf.reduce_sum(policy, axis=1)
-                v = r + (gamma * tf.reduce_sum(policy * q, axis=1) / normal)
-
-                q = tf.gather(v, transitions)
-                q = tf.reduce_sum(probabilities * q, axis=2)
-
-                return q
 
             # Build individual task models
             self._reward_functions = dict()
@@ -122,37 +63,45 @@ class Agent:
 
             for task in data.tasks:
 
-                # Define the reward function
-                reward = tf.Variable(tf.zeros([num_states], dtype=tf.float32))
-                self._reward_functions[task] = reward
+                # Define the value and reward functions
+                values, rewards, reward_penalty = self._model.task()
+                self._reward_functions[task] = rewards
 
-                # Define value function
-                values = tf.zeros([num_states, num_actions], dtype=tf.float32)
-
-                for _ in range(planning_depth):
-                    values = update(values, reward)
-
-                policy_value = beta * tf.gather(values, self._policy_input)
-                values = beta * tf.gather(values, self._state_input)
+                # Define state values
+                batch_values = tf.gather(values, self._state_input)
+                mean = tf.expand_dims(tf.reduce_mean(batch_values, axis=1), axis=1)
+                variance = 0.001 + tf.expand_dims(tf.reduce_mean(tf.square(batch_values - mean), axis=1), axis=1)
+                normalized = beta * ((batch_values - mean) / tf.sqrt(variance))
 
                 # Define the action prediction loss
-                partition = tf.log(tf.reduce_sum(tf.exp(values), axis=1))
-                likelihood = tf.reduce_sum(tf.one_hot(self._action_input, num_actions) * values, axis=1)
+                partition = tf.log(tf.reduce_sum(tf.exp(normalized), axis=1))
+                likelihood = tf.reduce_sum(tf.one_hot(self._action_input, len(Action)) * normalized, axis=1)
+                actions = tf.reduce_mean(partition - likelihood)
 
-                loss = tf.reduce_mean(partition - likelihood)
-                loss = loss + (penalty * tf.reduce_mean(tf.square(reward))) + model_penalty
-                self._reward_updates[task] = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
+                # Define bellman error - uses the underlying sensor model
+                policy = tf.exp(beta * values)
+                v = rewards + (tf.reduce_sum(policy * values, axis=1) / tf.reduce_sum(policy, axis=1))
+
+                residual = values - (self._model.base_gamma * tf.gather(v, self._model.base_transitions))
+                bellman = tf.reduce_mean(tf.square(tf.where(self._model.visible, residual, tf.zeros_like(residual))))
+
+                # Define loss and update
+                loss = reward_penalty + self._model.penalty + actions + (bellman_weight * bellman)
+
+                if rms_prop:
+                    self._reward_updates[task] = tf.train.RMSPropOptimizer(learning_rate=learning_rate).minimize(loss)
+                else:
+                    self._reward_updates[task] = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
                 # Define the action output
-                # self._policies[task] = tf.multinomial(policy_value, 1)
-                self._policies[task] = tf.argmax(policy_value, axis=1)
+                self._policies[task] = tf.argmax(values, axis=1)
 
             # Initialize the model
             session.run(tf.global_variables_initializer())
 
         # Pre-train the model
-        session.run(self._occupancy_update, feed_dict={
-            self._occupancy: sensor.map
+        session.run(self._model.sensor_update, feed_dict={
+            self._model.sensor_input: sensor.map
         })
 
         for task in data.tasks:
@@ -178,8 +127,8 @@ class Agent:
         Updates the agent's cost estimates to reflect new sensor data.
         """
 
-        self._session.run(self._occupancy_update, feed_dict={
-            self._occupancy: self._sensor.map
+        self._session.run(self._model.sensor_update, feed_dict={
+            self._model.sensor_input: self._sensor.map
         })
 
         for task in self._data.tasks:
@@ -207,7 +156,11 @@ class Agent:
         :param name: the name of the task
         """
 
-        self._policy = self._policies[name]
+        self._session.run(self._model.sensor_update, feed_dict={
+            self._model.sensor_input: self._sensor.map
+        })
+
+        self._policy = self._session.run(self._policies[name])
 
     def act(self, x, y):
         """
@@ -218,13 +171,7 @@ class Agent:
         :return: the sampled action
         """
 
-        # return self._session.run(self._policy, feed_dict={
-        #     self._state_input: [(x * self._sensor.height) + y]
-        # })[0, 0]
-
-        return self._session.run(self._policy, feed_dict={
-            self._policy_input: [(x * self._sensor.height) + y]
-        })[0]
+        return self._policy[(x * self._sensor.height) + y]
 
     def rewards(self, task):
         """
@@ -244,32 +191,26 @@ class Agent:
         return reward
 
 
-def builder(beta=1.0,
-            gamma=0.99,
-            base_depth=10,
-            abstract_depth=10,
-            planning_depth=150,
-            obstacle_mean=-0.5,
-            obstacle_variance=0.2,
-            penalty=0.1,
-            learning_rate=0.01,
-            batch_size=64,
+def builder(model_fn,
+            beta=1.0,
+            bellman_weight=1.0,
+            learning_rate=0.001,
+            batch_size=128,
             pretrain_batches=100,
-            online_batches=100):
+            online_batches=50,
+            rms_prop=False):
     """
     Returns a builder which itself returns a context manager which
-    constructs an HAL agent with the given configuration.
+    constructs an HAL agent with the given configuration
 
-    :param beta: the temperature parameter for the soft value iteration
-    :param gamma: the discount factor
-    :param planning_depth: the number of value iterations to perform
-    :param obstacle_mean: the mean of the log probability of an obstacle
-    :param obstacle_variance: the variance of the log probability
-    :param penalty: the regularization term for the cost functions
+    :param model_fn: the function used to construct the abstract model
+    :param beta: the action selection temperature
+    :param bellman_weight: the relative weight of the bellman error relative to the action prediction loss.
     :param learning_rate: the learning rate for training the cost functions
     :param batch_size: the batch size for training the cost functions
     :param pretrain_batches: the number of batch updates to perform to build the initial cost estimates
     :param online_batches: the number of batch updates to perform after each model update
+    :param rms_prop: whether to use RMSProp updates instead of the default Adam updates
     :return: a new builder for BAM agents
     """
 
@@ -278,20 +219,21 @@ def builder(beta=1.0,
         class Manager:
             def __enter__(self):
                 self._graph = tf.Graph()
-                self._session = tf.Session(graph=self._graph)
+
+                gpu_options = tf.GPUOptions(allow_growth=True)
+                config = tf.ConfigProto(gpu_options=gpu_options)
+                self._session = tf.Session(graph=self._graph, config=config)
 
                 try:
-                    agent = Agent(sensor, data, self._graph, self._session,
+                    agent = Agent(self._graph, self._session, sensor, data,
+                                  model_fn=model_fn,
                                   beta=beta,
-                                  gamma=gamma,
-                                  planning_depth=planning_depth,
-                                  obstacle_mean=obstacle_mean,
-                                  obstacle_variance=obstacle_variance,
-                                  penalty=penalty,
+                                  bellman_weight=bellman_weight,
                                   learning_rate=learning_rate,
                                   batch_size=batch_size,
                                   pretrain_batches=pretrain_batches,
-                                  online_batches=online_batches)
+                                  online_batches=online_batches,
+                                  rms_prop=rms_prop)
                 except Exception as e:
                     self._session.close()
                     raise e

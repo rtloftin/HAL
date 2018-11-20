@@ -42,6 +42,7 @@ class Agent:
         batch_size = kwargs['batch_size']
         num_batches = kwargs['num_batches']
         rms_prop = kwargs['rms_prop']
+        use_baseline = kwargs['use_baseline']
 
         # Get the number of states and actions
         num_states = env.width * env.height
@@ -70,6 +71,9 @@ class Agent:
         self._policies = dict()
         self._policy = None
 
+        self._values = dict()
+        self._value = None
+
         with graph.as_default():
 
             # Define transition constant
@@ -89,13 +93,19 @@ class Agent:
                 values = tf.zeros([num_states, num_actions], dtype=tf.float32)
 
                 for _ in range(planning_depth):
-                    policy = tf.exp(beta * gamma * values)
+                    if use_baseline:
+                        baseline = tf.expand_dims(tf.reduce_mean(values, axis=1), axis=1)
+                        policy = tf.exp(beta * gamma * (values - baseline))
+                    else:
+                        policy = tf.exp(beta * gamma * values)
+
                     normal = tf.reduce_sum(policy, axis=1)
                     values = reward + (gamma * tf.reduce_sum(policy * values, axis=1) / normal)
                     values = tf.gather(values, transitions)
 
                 # Define the action prediction loss
                 batch_values = tf.gather(values, self._state_input)
+
                 mean = tf.expand_dims(tf.reduce_mean(batch_values, axis=1), axis=1)
                 variance = 0.001 + tf.expand_dims(tf.reduce_mean(tf.square(batch_values - mean), axis=1), axis=1)
                 normalized = beta * gamma * ((batch_values - mean) / tf.sqrt(variance))
@@ -112,6 +122,9 @@ class Agent:
 
                 # Define the policy output
                 self._policies[task] = tf.argmax(values, axis=1)
+
+                # Define value function output
+                self._values[task] = values
 
             # Initialize the model
             session.run(tf.global_variables_initializer())
@@ -149,6 +162,7 @@ class Agent:
         """
 
         self._policy = self._session.run(self._policies[name])
+        # self._value = self._session.run(self._values[name])
 
     def act(self, x, y):
         """
@@ -158,6 +172,8 @@ class Agent:
         :param y: the agent's y coordinate
         :return: the sampled action
         """
+
+        # print("policy values: " + str(self._value[(x * self._height) + y]))
 
         return self._policy[(x * self._height) + y]
 
@@ -187,7 +203,8 @@ def builder(env,
             learning_rate=0.001,
             batch_size=128,
             num_batches=500,
-            rms_prop=False):
+            rms_prop=False,
+            use_baseline=False):
     """
     Returns a builder which itself returns a context manager which
     constructs a model-based ML-IRL agent with the given configuration.
@@ -201,6 +218,7 @@ def builder(env,
     :param batch_size: the batch size for training the cost functions
     :param num_batches: the number of batch updates to perform to find the cost estimates
     :param rms_prop: whether to use RMSProp updates instead of the default Adam updates
+    :param use_baseline: whether to use a mean baseline when computing intermediate policies
     :return: a new builder for ML-IRL agents
     """
 
@@ -223,7 +241,8 @@ def builder(env,
                                   learning_rate=learning_rate,
                                   batch_size=batch_size,
                                   num_batches=num_batches,
-                                  rms_prop=rms_prop)
+                                  rms_prop=rms_prop,
+                                  use_baseline=use_baseline)
                 except Exception as e:
                     self._session.close()
                     raise e

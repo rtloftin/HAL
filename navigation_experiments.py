@@ -18,6 +18,7 @@ if len(sys.argv) > 1:
     data_dir = sys.argv[1]
 else:
     data_dir = "/home/tyler/Desktop/navigation_results"
+    # data_dir = "/home/rtloftin/nav_results"
 
 dir_index = 0
 
@@ -36,9 +37,9 @@ with open(__file__) as source:
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # Construct environment
-# env, sensor = nav.one_room()
+env, sensor = nav.one_room()
 # env, sensor = nav.three_rooms()
-env, sensor = nav.big_one_room()
+# env, sensor = nav.big_one_room()
 # env, sensor = nav.big_three_rooms()
 
 depth = (env.width + env.height) * 2
@@ -52,7 +53,8 @@ ml_irl = nav.ml_irl(env,
                     learning_rate=0.01,
                     batch_size=128,
                     num_batches=500,
-                    rms_prop=True)
+                    rms_prop=True,
+                    use_baseline=True)
 
 # Model-Based IRL
 model_based = nav.model_based(beta=1.0,
@@ -63,8 +65,9 @@ model_based = nav.model_based(beta=1.0,
                               learning_rate=0.01,
                               batch_size=128,
                               pretrain_batches=500,
-                              online_batches=0,
-                              rms_prop=True)
+                              online_batches=100,
+                              rms_prop=True,
+                              use_baseline=True)
 
 # Standard BAM
 bam = nav.bam(beta=1.0,
@@ -76,8 +79,9 @@ bam = nav.bam(beta=1.0,
               learning_rate=0.01,
               batch_size=128,
               pretrain_batches=500,
-              online_batches=0,
-              rms_prop=True)
+              online_batches=100,
+              rms_prop=True,
+              use_baseline=True)
 
 # Abstract BAM
 grid_10 = nav.abstract_grid(env.width, env.height,
@@ -86,9 +90,10 @@ grid_10 = nav.abstract_grid(env.width, env.height,
                             planning_depth=depth,
                             gamma=0.99,
                             beta=1.0,
-                            link_mean=1.,
-                            link_penalty=0.0,
-                            reward_penalty=100.)
+                            abstract_mean=-.5,
+                            abstract_penalty=0.0,
+                            reward_penalty=100.,
+                            use_baseline=True)
 
 grid_5 = nav.abstract_grid(env.width, env.height,
                            h_step=5,
@@ -96,9 +101,10 @@ grid_5 = nav.abstract_grid(env.width, env.height,
                            planning_depth=depth,
                            gamma=0.99,
                            beta=1.0,
-                           link_mean=1.,
-                           link_penalty=0.0,
-                           reward_penalty=100.)
+                           abstract_mean=-.5,
+                           abstract_penalty=1.,
+                           reward_penalty=100.,
+                           use_baseline=True)
 
 grid_2 = nav.abstract_grid(env.width, env.height,
                            h_step=2,
@@ -106,23 +112,24 @@ grid_2 = nav.abstract_grid(env.width, env.height,
                            planning_depth=depth,
                            gamma=0.99,
                            beta=1.0,
-                           link_mean=1.,
-                           link_penalty=0.0,
-                           reward_penalty=100.)
+                           abstract_mean=-.5,
+                           abstract_penalty=1.,
+                           reward_penalty=100.,
+                           use_baseline=True)
 
 abstract_bam_10 = nav.abstract_bam(grid_10,
                                    beta=1.0,
                                    learning_rate=0.01,
                                    batch_size=128,
-                                   pretrain_batches=100,
-                                   online_batches=0,
+                                   pretrain_batches=500,
+                                   online_batches=100,
                                    rms_prop=True)
 
 abstract_bam_5 = nav.abstract_bam(grid_5,
                                   beta=1.0,
                                   learning_rate=0.01,
                                   batch_size=128,
-                                  pretrain_batches=100,
+                                  pretrain_batches=1000,
                                   online_batches=0,
                                   rms_prop=True)
 
@@ -130,24 +137,44 @@ abstract_bam_2 = nav.abstract_bam(grid_2,
                                   beta=1.0,
                                   learning_rate=0.01,
                                   batch_size=128,
-                                  pretrain_batches=100,
-                                  online_batches=0,
+                                  pretrain_batches=500,
+                                  online_batches=100,
                                   rms_prop=True)
+
+hal_5 = nav.hal(grid_5,
+                beta=1.0,
+                bellman_weight=1.0,
+                learning_rate=0.01,
+                batch_size=128,
+                pretrain_batches=500,
+                online_batches=0,
+                rms_prop=True)
+
+hal_2 = nav.hal(grid_2,
+                beta=1.0,
+                bellman_weight=1.0,
+                learning_rate=0.01,
+                batch_size=128,
+                pretrain_batches=500,
+                online_batches=100,
+                rms_prop=True)
 
 # Select algorithms
 algorithms = dict()
 # algorithms["ML-IRL"] = ml_irl
-# algorithms["Model-Based"] = model_based
-# algorithms["BAM"] = bam
+algorithms["Model-Based"] = model_based
+algorithms["BAM"] = bam
 # algorithms["Abstract-BAM-10x10"] = abstract_bam_10
-# algorithms["Abstract-BAM-5x5"] = abstract_bam_5
-algorithms["Abstract-BAM-2x2"] = abstract_bam_2
+algorithms["Abstract-BAM-5x5"] = abstract_bam_5
+# algorithms["Abstract-BAM-2x2"] = abstract_bam_2
+# algorithms["HAL-5x5"] = hal_5
+# algorithms["HAL-2x2"] = hal_2
 
 # run experiments
 nav.experiment(algorithms, env, sensor,
-               sessions=10,
-               demonstrations=10,
-               episodes=2,
+               sessions=20,
+               demonstrations=100,
+               episodes=8,
                baselines=100,
                evaluations=200,
                max_steps=depth,

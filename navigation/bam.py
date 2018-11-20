@@ -40,6 +40,7 @@ class Agent:
         learning_rate = kwargs['learning_rate']
         pretrain_batches = kwargs['pretrain_batches']
         rms_prop = kwargs['rms_prop']
+        use_baseline = kwargs['use_baseline']
 
         self._batch_size = kwargs['batch_size']
         self._online_batches = kwargs['online_batches']
@@ -101,6 +102,9 @@ class Agent:
             self._policies = dict()
             self._policy = None
 
+            self._values = dict()
+            self._value = None
+
             for task in data.tasks:
 
                 # Define the reward function
@@ -111,7 +115,12 @@ class Agent:
                 values = tf.zeros([num_states, num_actions], dtype=tf.float32)
 
                 for _ in range(planning_depth):
-                    policy = tf.exp(beta * gamma * values)
+                    if use_baseline:
+                        baseline = tf.expand_dims(tf.reduce_mean(values, axis=1), axis=1)
+                        policy = tf.exp(beta * gamma * (values - baseline))
+                    else:
+                        policy = tf.exp(beta * gamma * values)
+
                     normal = tf.reduce_sum(policy, axis=1)
                     v = reward + (gamma * tf.reduce_sum(policy * values, axis=1) / normal)
 
@@ -137,6 +146,9 @@ class Agent:
 
                 # Define the action output
                 self._policies[task] = tf.argmax(values, axis=1)
+
+                # Define value function output
+                self._values[task] = values
 
             # Initialize the model
             session.run(tf.global_variables_initializer())
@@ -203,6 +215,7 @@ class Agent:
         })
 
         self._policy = self._session.run(self._policies[name])
+        self._value = self._session.run(self._values[name])
 
     def act(self, x, y):
         """
@@ -212,6 +225,8 @@ class Agent:
         :param y: the agent's y coordinate
         :return: the sampled action
         """
+
+        # print("policy values: " + str(self._value[(x * self._sensor.height) + y]))
 
         return self._policy[(x * self._sensor.height) + y]
 
@@ -243,7 +258,8 @@ def builder(beta=1.0,
             batch_size=128,
             pretrain_batches=100,
             online_batches=50,
-            rms_prop=False):
+            rms_prop=False,
+            use_baseline=False):
     """
     Returns a builder which itself returns a context manager which
     constructs an BAM agent with the given configuration
@@ -259,6 +275,7 @@ def builder(beta=1.0,
     :param pretrain_batches: the number of batch updates to perform to build the initial cost estimates
     :param online_batches: the number of batch updates to perform after each model update
     :param rms_prop: whether to use RMSProp updates instead of the default Adam updates
+    :param use_baseline: whether to use a mean baseline when computing intermediate policies
     :return: a new builder for BAM agents
     """
 
@@ -284,7 +301,8 @@ def builder(beta=1.0,
                                   batch_size=batch_size,
                                   pretrain_batches=pretrain_batches,
                                   online_batches=online_batches,
-                                  rms_prop=rms_prop)
+                                  rms_prop=rms_prop,
+                                  use_baseline=use_baseline)
                 except Exception as e:
                     self._session.close()
                     raise e

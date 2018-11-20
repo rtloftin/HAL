@@ -9,9 +9,12 @@ import collections
 sess = tf.Session()
 
 values = tf.placeholder(tf.float32, shape=[3, 4])
-mean, variance = tf.nn.moments(values, axes=[1], keep_dims=True)
+mean = tf.reduce_mean(values, axis=1)
+expanded_mean = tf.expand_dims(mean, axis=1)
+broadcast_mean = tf.broadcast_to(expanded_mean, [3, 4])
+tiled_mean = tf.tile(expanded_mean, [1, 4])
 
-print(sess.run([mean, variance], feed_dict={
+print(sess.run(tiled_mean, feed_dict={
     values: [[1., 2., 3., 4.], [1., 1., 1., 1.], [-1., -1., -1., -1.]]
 }))
 

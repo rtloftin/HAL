@@ -29,13 +29,14 @@ class AbstractGrid:
         height = kwargs['height']
         h_step = kwargs['h_step']
         v_step = kwargs['v_step']
-        link_mean = kwargs['link_mean']
-        link_penalty = kwargs['link_penalty']
+        abstract_mean = kwargs['abstract_mean']
+        abstract_penalty = kwargs['abstract_penalty']
+        planning_depth = kwargs['planning_depth']
 
         self._base_gamma = kwargs['gamma']
         self._beta = kwargs['beta']
-        self._planning_depth = kwargs['planning_depth']
         self._reward_penalty = kwargs['reward_penalty']
+        self._use_baseline = kwargs['use_baseline']
 
         # Compute model dimensions
         base_states = width * height
@@ -45,12 +46,16 @@ class AbstractGrid:
         abstract_height = height // v_step
         abstract_states = abstract_width * abstract_height
         abstract_actions = 4
+
         sub_states = h_step * v_step
+        sub_depth = h_step + v_step
 
         self._base_states = base_states
         self._abstract_states = abstract_states
 
-        self._abstract_gamma = np.power(self._base_gamma, ((h_step + v_step) // 2))
+        self._base_depth = planning_depth // 2
+        self._abstract_depth = planning_depth // sub_depth
+        self._abstract_gamma = np.power(self._base_gamma, sub_depth)
 
         # Define transitions from base states
         base_next = np.empty([base_states, base_actions], dtype=np.int32)
@@ -109,38 +114,36 @@ class AbstractGrid:
                         abstract_base[cell, (x_offset * v_step) + y_offset] = \
                             ((start_x + x_offset) * height) + start_y + y
 
-        self._abstract_transitions = tf.constant(abstract_next, dtype=tf.int32)
+        self._abstract = tf.constant(abstract_next, dtype=tf.int32)
         self._abstract_base = tf.constant(abstract_base, dtype=tf.int32)
 
         # Define abstract dynamics model
-        model = tf.Variable(tf.fill([abstract_states, abstract_actions], link_mean), dtype=tf.float32)
+        model = tf.Variable(tf.fill([abstract_states], abstract_mean), dtype=tf.float32)
 
-        self._model_penalty = link_penalty * tf.reduce_mean(tf.square(link_mean - model))
-        self._model = tf.nn.sigmoid(model)
+        self._model = 1. - tf.nn.sigmoid(model)
+        self._model_penalty = abstract_penalty * tf.reduce_mean(tf.square(model - abstract_mean))
 
         # Define transition update from sensor data
         self._sensor_input = tf.placeholder(tf.int32, shape=[width, height])
         sensor = tf.reshape(self._sensor_input, [base_states])
 
         visible = tf.not_equal(sensor, Occupancy.UNKNOWN)
-        mask = tf.where(tf.equal(sensor, Occupancy.CLEAR), tf.ones([base_states], dtype=tf.float32),
-                        tf.zeros([base_states], dtype=tf.float32))
+        clear = tf.where(tf.equal(sensor, Occupancy.CLEAR), tf.ones([base_states], dtype=tf.float32),
+                         tf.zeros([base_states], dtype=tf.float32))
         base = tf.where(tf.gather(tf.equal(sensor, Occupancy.OCCUPIED), base_next), base_identity, base_next)
 
         self._visible = tf.Variable(tf.zeros([base_states], dtype=tf.bool), trainable=False, use_resource=True)
-        self._mask = tf.Variable(tf.zeros([base_states], dtype=tf.float32), trainable=False, use_resource=True)
-        self._base_transitions = tf.Variable(tf.zeros([base_states, base_actions], dtype=tf.int32),
-                                             trainable=False, use_resource=True)
+        self._clear = tf.Variable(tf.zeros([base_states], dtype=tf.float32), trainable=False, use_resource=True)
+        self._base = tf.Variable(tf.zeros([base_states, base_actions], dtype=tf.int32),
+                                 trainable=False, use_resource=True)
 
-        self._sensor_update = tf.group(tf.assign(self._visible, visible), tf.assign(self._mask, mask),
-                                       tf.assign(self._base_transitions, base))
+        self._sensor_update = tf.group(tf.assign(self._visible, visible), tf.assign(self._clear, clear),
+                                       tf.assign(self._base, base))
 
     def task(self):
         """
         Constructs a new Q-function for a new task, associated
         with a new intent vector variable.
-
-        TODO: Figure out how to make this thing work
 
         :return: a tensor representing the Q-values for this task, a task intent Tensor, a scalar reward penalty
         """
@@ -151,39 +154,84 @@ class AbstractGrid:
         # Define the reward penalty
         penalty = self._reward_penalty * tf.reduce_mean(tf.square(rewards))
 
-        # Define value function
-        vb = tf.zeros([self._base_states], dtype=tf.float32)
-        va = tf.zeros([self._abstract_states], dtype=tf.float32)
+        # Define first base iteration
+        v = rewards
 
-        for _ in range(self._planning_depth):
+        for _ in range(self._base_depth):
 
-            # Combine value functions
-            v = tf.gather(va, self._base_abstract)
-            v = tf.where(self._visible, vb, v)
+            # Compute Q
+            q = self._base_gamma * tf.gather(v, self._base)
 
-            # Compute the base Q-function
-            qb = self._base_gamma * tf.gather(v, self._base_transitions)
+            # Compute V
+            if self._use_baseline:
+                baseline = tf.expand_dims(tf.reduce_mean(q, axis=1), axis=1)
+                policy = tf.exp(self._beta * (q - baseline))
+            else:
+                policy = tf.exp(self._beta * q)
 
-            # Compute the abstract Q-function
-            qaa = self._abstract_gamma * self._model * tf.gather(va, self._abstract_transitions)
-            qab = self._abstract_gamma * tf.gather(self._mask * vb, self._abstract_base)
+            v = rewards + (tf.reduce_sum(policy * q, axis=1) / tf.reduce_sum(policy, axis=1))
 
-            # Compute the base value function
-            policy = tf.exp(self._beta * qb)
-            vb = rewards + tf.reduce_sum(policy * qb, axis=1) / tf.reduce_sum(policy, axis=1)
+        # Compute abstract rewards
+        q = tf.gather(self._clear * v, self._abstract_base)
 
-            # Compute the abstract value function
-            abstract_policy = tf.exp(self._beta * qaa)
-            base_policy = tf.exp(self._beta * qab)
-            normal = tf.reduce_sum(abstract_policy, axis=1) + tf.reduce_sum(base_policy, axis=1)
-            va = (tf.reduce_sum(abstract_policy * qaa, axis=1) + tf.reduce_sum(base_policy * qab, axis=1)) / normal
+        if self._use_baseline:
+            baseline = tf.expand_dims(tf.reduce_mean(q, axis=1), axis=1)
+            policy = tf.exp(self._beta * (q - baseline))
+        else:
+            policy = tf.exp(self._beta * q)
+
+        ra = self._abstract_gamma * tf.reduce_sum(policy * q, axis=1) / tf.reduce_sum(policy, axis=1)
+
+        # Define abstract iteration
+        va = ra
+
+        for _ in range(self._abstract_depth):
+
+            # Compute Q
+            q = self._abstract_gamma * tf.gather(self._model * va, self._abstract)
+
+            # Compute V
+            if self._use_baseline:
+                baseline = tf.expand_dims(tf.reduce_mean(q, axis=1), axis=1)
+                policy = tf.exp(self._beta * (q - baseline))
+            else:
+                policy = tf.exp(self._beta * q)
+
+            va = ra + (tf.reduce_sum(policy * q, axis=1) / tf.reduce_sum(policy, axis=1))
+
+        # Compute Q
+        q = self._abstract_gamma * tf.gather(self._model * va, self._abstract)
+
+        # Compute V
+        if self._use_baseline:
+            baseline = tf.expand_dims(tf.reduce_mean(q, axis=1), axis=1)
+            policy = tf.exp(self._beta * (q - baseline))
+        else:
+            policy = tf.exp(self._beta * q)
+
+        va = tf.reduce_sum(policy * q, axis=1) / tf.reduce_sum(policy, axis=1)
+
+        # Define second base iteration
+        rb = tf.gather(self._model * va, self._base_abstract)
+
+        for _ in range(self._base_depth):
+
+            # Compute Q
+            q = self._base_gamma * tf.gather(tf.where(self._visible, v, rb), self._base)
+
+            # Compute V
+            if self._use_baseline:
+                baseline = tf.expand_dims(tf.reduce_mean(q, axis=1), axis=1)
+                policy = tf.exp(self._beta * (q - baseline))
+            else:
+                policy = tf.exp(self._beta * q)
+
+            v = rewards + (tf.reduce_sum(policy * q, axis=1) / tf.reduce_sum(policy, axis=1))
 
         # Compute output Q-values
-        v = tf.gather(va, self._base_abstract)
-        v = tf.where(self._visible, vb, v)
-        q_values = self._base_gamma * tf.gather(v, self._base_transitions)
+        q = self._base_gamma * tf.gather(v, self._base)
 
-        return q_values, rewards, penalty
+        return q, rewards, penalty
 
     @property
     def sensor_input(self):
@@ -192,6 +240,18 @@ class AbstractGrid:
     @property
     def sensor_update(self):
         return self._sensor_update
+
+    @property
+    def visible(self):
+        return self._visible
+
+    @property
+    def base_transitions(self):
+        return self._base
+
+    @property
+    def base_gamma(self):
+        return self._base_gamma
 
     @property
     def penalty(self):
@@ -204,9 +264,10 @@ def abstract_grid(width, height,
                   planning_depth=200,
                   gamma=0.99,
                   beta=1.0,
-                  link_mean=1.,
-                  link_penalty=10.0,
-                  reward_penalty=100.):
+                  abstract_mean=-.5,
+                  abstract_penalty=1.0,
+                  reward_penalty=100.,
+                  use_baseline=False):
     """
     Returns a builder which constructs abstract grid
     objects attached to a given graph and sensor model.
@@ -218,9 +279,10 @@ def abstract_grid(width, height,
     :param planning_depth: the number of value iterations to perform
     :param gamma: the one-step discount factor
     :param beta: the action selection temperature for planning
-    :param link_mean: the mean of the log-probabilities of a successful connection
-    :param link_penalty: the inverse variance of the log-probabilities of a successful connection
+    :param abstract_mean: the mean of the log-probabilities of a successful connection
+    :param abstract_penalty: the inverse variance of the log-probabilities of a successful connection
     :param reward_penalty: the inverse variance of the reward values
+    :param use_baseline: whether to use a mean baseline when computing intermediate policies
     :return: a builder method for abstract grid models
     """
 
@@ -231,6 +293,7 @@ def abstract_grid(width, height,
                                 planning_depth=planning_depth,
                                 gamma=gamma,
                                 beta=beta,
-                                link_mean=link_mean,
-                                link_penalty=link_penalty,
-                                reward_penalty=reward_penalty)
+                                abstract_mean=abstract_mean,
+                                abstract_penalty=abstract_penalty,
+                                reward_penalty=reward_penalty,
+                                use_baseline=use_baseline)
