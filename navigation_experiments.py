@@ -60,7 +60,7 @@ ml_irl = nav.ml_irl(env,
 model_based = nav.model_based(beta=1.0,
                               gamma=0.99,
                               planning_depth=depth,
-                              obstacle_prior=0.2,
+                              obstacle_prior=0.0,
                               penalty=100.,
                               learning_rate=0.01,
                               batch_size=128,
@@ -101,7 +101,7 @@ grid_5 = nav.abstract_grid(env.width, env.height,
                            planning_depth=depth,
                            gamma=0.99,
                            beta=1.0,
-                           abstract_mean=-.5,
+                           abstract_mean=-.0,
                            abstract_penalty=1.,
                            reward_penalty=100.,
                            use_baseline=True)
@@ -129,8 +129,8 @@ abstract_bam_5 = nav.abstract_bam(grid_5,
                                   beta=1.0,
                                   learning_rate=0.01,
                                   batch_size=128,
-                                  pretrain_batches=1000,
-                                  online_batches=0,
+                                  pretrain_batches=500,
+                                  online_batches=100,
                                   rms_prop=True)
 
 abstract_bam_2 = nav.abstract_bam(grid_2,
@@ -147,7 +147,7 @@ hal_5 = nav.hal(grid_5,
                 learning_rate=0.01,
                 batch_size=128,
                 pretrain_batches=500,
-                online_batches=0,
+                online_batches=100,
                 rms_prop=True)
 
 hal_2 = nav.hal(grid_2,
@@ -162,7 +162,7 @@ hal_2 = nav.hal(grid_2,
 # Select algorithms
 algorithms = dict()
 # algorithms["ML-IRL"] = ml_irl
-algorithms["Model-Based"] = model_based
+# algorithms["Model-Based"] = model_based
 algorithms["BAM"] = bam
 # algorithms["Abstract-BAM-10x10"] = abstract_bam_10
 algorithms["Abstract-BAM-5x5"] = abstract_bam_5
@@ -172,9 +172,9 @@ algorithms["Abstract-BAM-5x5"] = abstract_bam_5
 
 # run experiments
 nav.experiment(algorithms, env, sensor,
-               sessions=20,
-               demonstrations=100,
-               episodes=8,
+               sessions=10,
+               demonstrations=10,
+               episodes=4,
                baselines=100,
                evaluations=200,
                max_steps=depth,
