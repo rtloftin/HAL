@@ -162,11 +162,11 @@ hal_2 = nav.hal(grid_2,
 # Select algorithms
 algorithms = dict()
 # algorithms["ML-IRL"] = ml_irl
-# algorithms["Model-Based"] = model_based
+algorithms["Model-Based"] = model_based
 algorithms["BAM"] = bam
-# algorithms["Abstract-BAM-10x10"] = abstract_bam_10
+algorithms["Abstract-BAM-10x10"] = abstract_bam_10
 algorithms["Abstract-BAM-5x5"] = abstract_bam_5
-# algorithms["Abstract-BAM-2x2"] = abstract_bam_2
+algorithms["Abstract-BAM-2x2"] = abstract_bam_2
 # algorithms["HAL-5x5"] = hal_5
 # algorithms["HAL-2x2"] = hal_2
 
