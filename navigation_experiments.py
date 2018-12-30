@@ -7,9 +7,11 @@ import tensorflow as tf
 import os
 import sys
 
+# env, sensor = nav.one_room()
+# env, sensor = nav.three_rooms()
 # env, sensor = nav.big_one_room()
 # env, sensor = nav.big_three_rooms()
-# env, sensor = nav.one_room()
+# env, sensor = nav.barricades()
 # nav.visualize(env, sensor)
 # sys.exit(0)
 
@@ -37,10 +39,12 @@ with open(__file__) as source:
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # Construct environment
-env, sensor = nav.one_room()
+# env, sensor = nav.one_room()
 # env, sensor = nav.three_rooms()
 # env, sensor = nav.big_one_room()
 # env, sensor = nav.big_three_rooms()
+# env, sensor = nav.barricades()
+env, sensor = nav.more_barricades()
 
 depth = (env.width + env.height) * 2
 
@@ -52,7 +56,7 @@ ml_irl = nav.ml_irl(env,
                     penalty=100.,
                     learning_rate=0.01,
                     batch_size=128,
-                    num_batches=500,
+                    num_batches=1000,
                     rms_prop=True,
                     use_baseline=True)
 
@@ -79,7 +83,7 @@ bam = nav.bam(beta=1.0,
               learning_rate=0.01,
               batch_size=128,
               pretrain_batches=500,
-              online_batches=100,
+              online_batches=0,
               rms_prop=True,
               use_baseline=True)
 
@@ -90,8 +94,8 @@ grid_10 = nav.abstract_grid(env.width, env.height,
                             planning_depth=depth,
                             gamma=0.99,
                             beta=1.0,
-                            abstract_mean=-.5,
-                            abstract_penalty=0.0,
+                            abstract_mean=0.,
+                            abstract_penalty=1.,
                             reward_penalty=100.,
                             use_baseline=True)
 
@@ -101,8 +105,8 @@ grid_5 = nav.abstract_grid(env.width, env.height,
                            planning_depth=depth,
                            gamma=0.99,
                            beta=1.0,
-                           abstract_mean=-.0,
-                           abstract_penalty=1.,
+                           abstract_mean=-1.,
+                           abstract_penalty=0.1,
                            reward_penalty=100.,
                            use_baseline=True)
 
@@ -112,7 +116,7 @@ grid_2 = nav.abstract_grid(env.width, env.height,
                            planning_depth=depth,
                            gamma=0.99,
                            beta=1.0,
-                           abstract_mean=-.5,
+                           abstract_mean=0.,
                            abstract_penalty=1.,
                            reward_penalty=100.,
                            use_baseline=True)
@@ -161,20 +165,20 @@ hal_2 = nav.hal(grid_2,
 
 # Select algorithms
 algorithms = dict()
-# algorithms["ML-IRL"] = ml_irl
+algorithms["ML-IRL"] = ml_irl
 algorithms["Model-Based"] = model_based
 algorithms["BAM"] = bam
-algorithms["Abstract-BAM-10x10"] = abstract_bam_10
-algorithms["Abstract-BAM-5x5"] = abstract_bam_5
-algorithms["Abstract-BAM-2x2"] = abstract_bam_2
+# algorithms["Abstract-BAM-10x10"] = abstract_bam_10
+# algorithms["Abstract-BAM-5x5"] = abstract_bam_5
+# algorithms["Abstract-BAM-2x2"] = abstract_bam_2
 # algorithms["HAL-5x5"] = hal_5
 # algorithms["HAL-2x2"] = hal_2
 
 # run experiments
 nav.experiment(algorithms, env, sensor,
-               sessions=10,
-               demonstrations=10,
-               episodes=4,
+               sessions=5,
+               demonstrations=3,
+               episodes=0,
                baselines=100,
                evaluations=200,
                max_steps=depth,

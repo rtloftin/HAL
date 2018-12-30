@@ -89,6 +89,7 @@ class Agent:
             # Define dynamics model
             model = tf.Variable(tf.fill([num_states], obstacle_mean), dtype=tf.float32)
             model_penalty = obstacle_variance * tf.reduce_mean(tf.square(obstacle_mean - model))
+            model_average = tf.reduce_mean(1. - tf.nn.sigmoid(model))
 
             # Define transition probabilities
             obstacles = tf.nn.sigmoid(model)
@@ -175,6 +176,8 @@ class Agent:
                     self._state_input: states,
                     self._action_input: actions
                 })
+
+        print("BAM CLEAR PROBABILITY: " + str(session.run(model_average)))
 
     def update(self):
         """

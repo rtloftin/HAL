@@ -112,6 +112,8 @@ class Agent:
                     self._action_input: actions
                 })
 
+        print("ABSTRACT BAM CLEAR PROBABILITY: " + str(session.run(self._model.average)))
+
     def update(self):
         """
         Updates the agent's cost estimates to reflect new sensor data.

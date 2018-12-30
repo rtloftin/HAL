@@ -122,6 +122,7 @@ class AbstractGrid:
 
         self._model = 1. - tf.nn.sigmoid(model)
         self._model_penalty = abstract_penalty * tf.reduce_mean(tf.square(model - abstract_mean))
+        self._model_average = tf.reduce_mean(self._model)
 
         # Define transition update from sensor data
         self._sensor_input = tf.placeholder(tf.int32, shape=[width, height])
@@ -155,8 +156,7 @@ class AbstractGrid:
         penalty = self._reward_penalty * tf.reduce_mean(tf.square(rewards))
 
         # Define first base iteration
-        zeros = tf.zeros_like(rewards)
-        v = tf.where(self._visible, rewards, zeros)
+        v = rewards
 
         for _ in range(self._base_depth):
 
@@ -171,7 +171,6 @@ class AbstractGrid:
                 policy = tf.exp(self._beta * q)
 
             v = rewards + (tf.reduce_sum(policy * q, axis=1) / tf.reduce_sum(policy, axis=1))
-            v = tf.where(self._visible, v, zeros)
 
         # Compute abstract rewards
         q = tf.gather(self._clear * v, self._abstract_base)
@@ -201,7 +200,6 @@ class AbstractGrid:
 
             va = ra + (tf.reduce_sum(policy * q, axis=1) / tf.reduce_sum(policy, axis=1))
 
-        """
         # Compute Q
         q = self._abstract_gamma * tf.gather(self._model * va, self._abstract)
 
@@ -213,16 +211,14 @@ class AbstractGrid:
             policy = tf.exp(self._beta * q)
 
         va = tf.reduce_sum(policy * q, axis=1) / tf.reduce_sum(policy, axis=1)
-        """
 
         # Define second base iteration
-        vb = tf.gather(self._model * va, self._base_abstract)
-        v = tf.where(self._visible, v, vb)
+        rb = tf.gather(self._model * va, self._base_abstract)
 
         for _ in range(self._base_depth):
 
             # Compute Q
-            q = self._base_gamma * tf.gather(v, self._base)
+            q = self._base_gamma * tf.gather(tf.where(self._visible, v, rb), self._base)
 
             # Compute V
             if self._use_baseline:
@@ -232,7 +228,6 @@ class AbstractGrid:
                 policy = tf.exp(self._beta * q)
 
             v = rewards + (tf.reduce_sum(policy * q, axis=1) / tf.reduce_sum(policy, axis=1))
-            v = tf.where(self._visible, v, vb)
 
         # Compute output Q-values
         q = self._base_gamma * tf.gather(v, self._base)
@@ -262,6 +257,10 @@ class AbstractGrid:
     @property
     def penalty(self):
         return self._model_penalty
+
+    @property
+    def average(self):
+        return self._model_average
 
 
 def abstract_grid(width, height,
