@@ -3,7 +3,7 @@ Implements the 'Barricades' environment.
 """
 
 from .environment import Environment, Map, Task, Region
-from .sensor import RoundSensor
+from .sensor import RoundSensor, PointSensor
 
 
 def barricades():
@@ -39,6 +39,6 @@ def barricades():
     env.reset(task="right")
 
     # Initialize sensor model
-    sensor = RoundSensor(env, 2)
+    sensor = RoundSensor(env, 4)
 
     return env, sensor

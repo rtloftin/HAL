@@ -14,37 +14,42 @@ import time
 
 class Agent:
     """
-    A BAM agent.
+    A BAM agent which uses an abstract planning model.
     """
 
-    def __init__(self, graph, session, sensor, data, **kwargs):
+    def __init__(self, env, **kwargs):
         """
-        Constructs the agent and initializes the cost function estimates.
+        Constructs a new abstract BAM agent.
 
-        :param graph: the TensorFlow graph for the agent to use
-        :param session: the TensorFlow session for the agent to use
-        :param sensor: the sensor model used to observe the environment
-        :param data: the demonstrated state-action trajectories
+        :param env: the navigation environment this agent must operate in
         :param kwargs: the configuration parameters for the agent.
         """
 
-        # Capture instance objects
-        self._sensor = sensor
-        self._data = data
-        self._session = session
+        # Capture environment
+        self._env = env
+
+        # Capture environment height
+        self._height = env.height
 
         # Unpack configuration
         model_fn = kwargs['model_fn']
         beta = kwargs['beta']
         learning_rate = kwargs['learning_rate']
-        pretrain_batches = kwargs['pretrain_batches']
         rms_prop = kwargs['rms_prop']
 
+        self._pretrain_batches = kwargs['pretrain_batches']
         self._batch_size = kwargs['batch_size']
         self._online_batches = kwargs['online_batches']
 
-        # Build planning and learning graph
-        with graph.as_default():
+        # Initialize placeholders
+        self._session = None
+        self._sensor = None
+        self._data = None
+
+        # Construct computation graph
+        self._graph = tf.Graph()
+
+        with self._graph.as_default():
 
             # Construct dynamics model
             self._model = model_fn()
@@ -60,7 +65,7 @@ class Agent:
             self._policies = dict()
             self._policy = None
 
-            for task in data.tasks:
+            for task, _ in env.tasks:
 
                 # Define the value and reward functions
                 values, rewards, penalty = self._model.task()
@@ -86,33 +91,58 @@ class Agent:
                 # Define the action output
                 self._policies[task] = tf.argmax(values, axis=1)
 
-            # Initialize the model
-            session.run(tf.global_variables_initializer())
+    def session(self, sensor, data):
+        """
+        Re-initializes the learning agent with new training data
+        and a new sensor map, and constructs a new Tensorflow
+        session, which is returned to be used in a with block.
 
-        # Pre-train the model
-        session.run(self._model.sensor_update, feed_dict={
-            self._model.sensor_input: sensor.map
-        })
+        :param sensor: the sensor model, with associated training data
+        :param data: the demonstration data the agent needs to learn from
+        :return: a context manager to clean up any resources used by the agent
+        """
 
-        for task in data.tasks:
-            update = self._reward_updates[task]
-            samples = data.steps(task)
+        # Initialize Tensorflow session
+        gpu_options = tf.GPUOptions(allow_growth=True)
+        config = tf.ConfigProto(gpu_options=gpu_options)
+        self._session = tf.Session(graph=self._graph, config=config)
 
-            for b in range(pretrain_batches):
-                batch = np.random.choice(samples, self._batch_size)
-                states = []
-                actions = []
+        # Capture sensor and training data
+        self._sensor = sensor
+        self._data = data
 
-                for step in batch:
-                    states.append(((step.x * sensor.height) + step.y))
-                    actions.append(step.action)
+        # Initialize the agent
+        try:
+            with self._graph.as_default():
+                self._session.run(tf.global_variables_initializer())
 
-                session.run(update, feed_dict={
-                    self._state_input: states,
-                    self._action_input: actions
-                })
+            self._session.run(self._model.sensor_update, feed_dict={
+                self._model.sensor_input: sensor.map
+            })
 
-        print("ABSTRACT BAM CLEAR PROBABILITY: " + str(session.run(self._model.average)))
+            for task in data.tasks:
+                update = self._reward_updates[task]
+                samples = data.steps(task)
+
+                for b in range(self._pretrain_batches):
+                    batch = np.random.choice(samples, self._batch_size)
+                    states = []
+                    actions = []
+
+                    for step in batch:
+                        states.append(((step.x * self._height) + step.y))
+                        actions.append(step.action)
+
+                    self._session.run(update, feed_dict={
+                        self._state_input: states,
+                        self._action_input: actions
+                    })
+
+        except Exception as e:
+            self._session.close()
+            raise e
+
+        return self._session
 
     def update(self):
         """
@@ -133,7 +163,7 @@ class Agent:
                 actions = []
 
                 for step in batch:
-                    states.append((step.x * self._sensor.height) + step.y)
+                    states.append((step.x * self._height) + step.y)
                     actions.append(step.action)
 
                 self._session.run(update, feed_dict={
@@ -163,7 +193,7 @@ class Agent:
         :return: the sampled action
         """
 
-        return self._policy[(x * self._sensor.height) + y]
+        return self._policy[(x * self._height) + y]
 
     def rewards(self, task):
         """
@@ -174,11 +204,11 @@ class Agent:
         """
 
         rewards = self._session.run(self._reward_functions[task])
-        reward = np.empty((self._sensor.width, self._sensor.height), dtype=np.float32)
+        reward = np.empty((self._env.width, self._env.height), dtype=np.float32)
 
-        for x in range(self._sensor.width):
-            for y in range(self._sensor.height):
-                reward[x, y] = rewards[(x * self._sensor.height) + y]
+        for x in range(self._env.width):
+            for y in range(self._env.height):
+                reward[x, y] = rewards[(x * self._height) + y]
 
         return reward
 
@@ -191,8 +221,7 @@ def builder(model_fn,
             online_batches=50,
             rms_prop=False):
     """
-    Returns a builder which itself returns a context manager which
-    constructs an BAM agent with the given configuration
+    Returns a factory method for constructing abstract BAM agents with the given configuration.
 
     :param model_fn: the function used to construct the abstract model
     :param beta: the action selection temperature
@@ -204,37 +233,14 @@ def builder(model_fn,
     :return: a new builder for BAM agents
     """
 
-    def manager(sensor, data):
+    def build(env):
+        return Agent(env,
+                     model_fn=model_fn,
+                     beta=beta,
+                     learning_rate=learning_rate,
+                     batch_size=batch_size,
+                     pretrain_batches=pretrain_batches,
+                     online_batches=online_batches,
+                     rms_prop=rms_prop)
 
-        class Manager:
-            def __enter__(self):
-                self._graph = tf.Graph()
-
-                gpu_options = tf.GPUOptions(allow_growth=True)
-                config = tf.ConfigProto(gpu_options=gpu_options)
-                self._session = tf.Session(graph=self._graph, config=config)
-
-                try:
-                    agent = Agent(self._graph, self._session, sensor, data,
-                                  model_fn=model_fn,
-                                  beta=beta,
-                                  learning_rate=learning_rate,
-                                  batch_size=batch_size,
-                                  pretrain_batches=pretrain_batches,
-                                  online_batches=online_batches,
-                                  rms_prop=rms_prop)
-                except Exception as e:
-                    self._session.close()
-                    raise e
-
-                return agent
-
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                self._session.close()
-                self._graph = None
-
-                return False
-
-        return Manager()
-
-    return manager
+    return build

@@ -43,14 +43,16 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 # env, sensor = nav.three_rooms()
 # env, sensor = nav.big_one_room()
 # env, sensor = nav.big_three_rooms()
-# env, sensor = nav.barricades()
-env, sensor = nav.more_barricades()
+env, sensor = nav.barricades()
+# env, sensor = nav.more_barricades()
+
+# Override sensor
+sensor = nav.RoundSensor(env, 3)
 
 depth = (env.width + env.height) * 2
 
 # Maximum likelihood IRL
-ml_irl = nav.ml_irl(env,
-                    beta=1.0,
+ml_irl = nav.ml_irl(beta=1.0,
                     gamma=0.99,
                     planning_depth=depth,
                     penalty=100.,
@@ -94,8 +96,8 @@ grid_10 = nav.abstract_grid(env.width, env.height,
                             planning_depth=depth,
                             gamma=0.99,
                             beta=1.0,
-                            abstract_mean=0.,
-                            abstract_penalty=1.,
+                            abstract_mean=5.,
+                            abstract_penalty=.01,
                             reward_penalty=100.,
                             use_baseline=True)
 
@@ -105,8 +107,8 @@ grid_5 = nav.abstract_grid(env.width, env.height,
                            planning_depth=depth,
                            gamma=0.99,
                            beta=1.0,
-                           abstract_mean=-1.,
-                           abstract_penalty=0.1,
+                           abstract_mean=5.,
+                           abstract_penalty=.01,
                            reward_penalty=100.,
                            use_baseline=True)
 
@@ -116,8 +118,8 @@ grid_2 = nav.abstract_grid(env.width, env.height,
                            planning_depth=depth,
                            gamma=0.99,
                            beta=1.0,
-                           abstract_mean=0.,
-                           abstract_penalty=1.,
+                           abstract_mean=5.,
+                           abstract_penalty=.01,
                            reward_penalty=100.,
                            use_baseline=True)
 
@@ -145,40 +147,22 @@ abstract_bam_2 = nav.abstract_bam(grid_2,
                                   online_batches=100,
                                   rms_prop=True)
 
-hal_5 = nav.hal(grid_5,
-                beta=1.0,
-                bellman_weight=1.0,
-                learning_rate=0.01,
-                batch_size=128,
-                pretrain_batches=500,
-                online_batches=100,
-                rms_prop=True)
-
-hal_2 = nav.hal(grid_2,
-                beta=1.0,
-                bellman_weight=1.0,
-                learning_rate=0.01,
-                batch_size=128,
-                pretrain_batches=500,
-                online_batches=100,
-                rms_prop=True)
 
 # Select algorithms
 algorithms = dict()
-algorithms["ML-IRL"] = ml_irl
+# algorithms["ML-IRL"] = ml_irl
 algorithms["Model-Based"] = model_based
 algorithms["BAM"] = bam
-# algorithms["Abstract-BAM-10x10"] = abstract_bam_10
-# algorithms["Abstract-BAM-5x5"] = abstract_bam_5
+# algorithms["Abstract-BAM-dummy"] = abstract_bam_dummy
+algorithms["Abstract-BAM-10x10"] = abstract_bam_10
+algorithms["Abstract-BAM-5x5"] = abstract_bam_5
 # algorithms["Abstract-BAM-2x2"] = abstract_bam_2
-# algorithms["HAL-5x5"] = hal_5
-# algorithms["HAL-2x2"] = hal_2
 
 # run experiments
 nav.experiment(algorithms, env, sensor,
-               sessions=5,
-               demonstrations=3,
-               episodes=0,
+               sessions=10,
+               demonstrations=5,
+               episodes=8,
                baselines=100,
                evaluations=200,
                max_steps=depth,

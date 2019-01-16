@@ -14,21 +14,19 @@ class Agent:
     A BAM agent.
     """
 
-    def __init__(self, sensor, data, graph, session, **kwargs):
+    def __init__(self, env, **kwargs):
         """
-        Constructs the agent and initializes the cost function estimates.
+        Constructs a new BAM agent.
 
-        :param sensor: the sensor model used to observe the environment
-        :param data: the demonstrated state-action trajectories
-        :param graph: the TensorFlow graph for the agent to use
-        :param session: the TensorFlow session for the agent to use
+        :param env: the navigation environment this agent must operate in
         :param kwargs: the configuration parameters for the agent.
         """
 
-        # Capture instance objects
-        self._sensor = sensor
-        self._data = data
-        self._session = session
+        # Capture environment
+        self._env = env
+
+        # Capture environment height
+        self._height = env.height
 
         # Unpack configuration
         gamma = kwargs['gamma']
@@ -38,36 +36,43 @@ class Agent:
         obstacle_variance = kwargs['obstacle_variance']
         penalty = kwargs['penalty']
         learning_rate = kwargs['learning_rate']
-        pretrain_batches = kwargs['pretrain_batches']
         rms_prop = kwargs['rms_prop']
         use_baseline = kwargs['use_baseline']
 
+        self._pretrain_batches = kwargs['pretrain_batches']
         self._batch_size = kwargs['batch_size']
         self._online_batches = kwargs['online_batches']
 
         # Get the number of states and actions
-        num_states = sensor.width * sensor.height
+        num_states = env.width * env.height
         num_actions = len(Action)
 
         # Define the transition structure
         transitions = np.empty([num_states, num_actions], dtype=np.int32)
 
-        def next(cell, nx, ny):
-            if 0 <= nx < sensor.width and 0 <= ny < sensor.height:
-                return (nx * sensor.height) + ny
+        def nxt(cell, nx, ny):
+            if 0 <= nx < env.width and 0 <= ny < env.height:
+                return (nx * env.height) + ny
             return cell
 
-        for x in range(sensor.width):
-            for y in range(sensor.height):
-                cell = (x * sensor.height) + y
+        for x in range(env.width):
+            for y in range(env.height):
+                cell = (x * env.height) + y
                 transitions[cell, Action.STAY] = cell
-                transitions[cell, Action.UP] = next(cell, x, y + 1)
-                transitions[cell, Action.DOWN] = next(cell, x, y - 1)
-                transitions[cell, Action.LEFT] = next(cell, x - 1, y)
-                transitions[cell, Action.RIGHT] = next(cell, x + 1, y)
+                transitions[cell, Action.UP] = nxt(cell, x, y + 1)
+                transitions[cell, Action.DOWN] = nxt(cell, x, y - 1)
+                transitions[cell, Action.LEFT] = nxt(cell, x - 1, y)
+                transitions[cell, Action.RIGHT] = nxt(cell, x + 1, y)
 
-        # Build planning and learning graph
-        with graph.as_default():
+        # Initialize placeholders
+        self._session = None
+        self._sensor = None
+        self._data = None
+
+        # Construct computation graph
+        self._graph = tf.Graph()
+
+        with self._graph.as_default():
 
             # Define state and action inputs
             self._state_input = tf.placeholder(tf.int32, shape=[self._batch_size])
@@ -77,7 +82,7 @@ class Agent:
             transitions = tf.constant(transitions, dtype=tf.int32)
 
             # Define occupancy mask
-            self._sensor_input = tf.placeholder(tf.int32, shape=[sensor.width, sensor.height])
+            self._sensor_input = tf.placeholder(tf.int32, shape=[env.width, env.height])
             occupancy = tf.reshape(self._sensor_input, [num_states])
 
             visible = tf.Variable(tf.fill([num_states], False), dtype=tf.bool, trainable=False, use_resource=True)
@@ -89,7 +94,6 @@ class Agent:
             # Define dynamics model
             model = tf.Variable(tf.fill([num_states], obstacle_mean), dtype=tf.float32)
             model_penalty = obstacle_variance * tf.reduce_mean(tf.square(obstacle_mean - model))
-            model_average = tf.reduce_mean(1. - tf.nn.sigmoid(model))
 
             # Define transition probabilities
             obstacles = tf.nn.sigmoid(model)
@@ -106,7 +110,7 @@ class Agent:
             self._values = dict()
             self._value = None
 
-            for task in data.tasks:
+            for task, _ in env.tasks:
 
                 # Define the reward function
                 reward = tf.Variable(tf.zeros([num_states], dtype=tf.float32))
@@ -151,33 +155,58 @@ class Agent:
                 # Define value function output
                 self._values[task] = values
 
-            # Initialize the model
-            session.run(tf.global_variables_initializer())
+    def session(self, sensor, data):
+        """
+        Re-initializes the learning agent with new training data
+        and a new sensor map, and constructs a new Tensorflow
+        session, which is returned to be used in a with block.
 
-        # Pre-train the model
-        session.run(self._sensor_update, feed_dict={
-            self._sensor_input: sensor.map
-        })
+        :param sensor: the sensor model, with associated training data
+        :param data: the demonstration data the agent needs to learn from
+        :return: a context manager to clean up any resources used by the agent
+        """
 
-        for task in data.tasks:
-            update = self._reward_updates[task]
-            samples = data.steps(task)
+        # Initialize Tensorflow session
+        gpu_options = tf.GPUOptions(allow_growth=True)
+        config = tf.ConfigProto(gpu_options=gpu_options)
+        self._session = tf.Session(graph=self._graph, config=config)
 
-            for b in range(pretrain_batches):
-                batch = np.random.choice(samples, self._batch_size)
-                states = []
-                actions = []
+        # Capture sensor and training data
+        self._sensor = sensor
+        self._data = data
 
-                for step in batch:
-                    states.append(((step.x * sensor.height) + step.y))
-                    actions.append(step.action)
+        # Initialize the agent
+        try:
+            with self._graph.as_default():
+                self._session.run(tf.global_variables_initializer())
 
-                session.run(update, feed_dict={
-                    self._state_input: states,
-                    self._action_input: actions
-                })
+            self._session.run(self._sensor_update, feed_dict={
+                self._sensor_input: sensor.map
+            })
 
-        print("BAM CLEAR PROBABILITY: " + str(session.run(model_average)))
+            for task in data.tasks:
+                update = self._reward_updates[task]
+                samples = data.steps(task)
+
+                for b in range(self._pretrain_batches):
+                    batch = np.random.choice(samples, self._batch_size)
+                    states = []
+                    actions = []
+
+                    for step in batch:
+                        states.append(((step.x * self._height) + step.y))
+                        actions.append(step.action)
+
+                    self._session.run(update, feed_dict={
+                        self._state_input: states,
+                        self._action_input: actions
+                    })
+
+        except Exception as e:
+            self._session.close()
+            raise e
+
+        return self._session
 
     def update(self):
         """
@@ -198,7 +227,7 @@ class Agent:
                 actions = []
 
                 for step in batch:
-                    states.append((step.x * self._sensor.height) + step.y)
+                    states.append((step.x * self._height) + step.y)
                     actions.append(step.action)
 
                 self._session.run(update, feed_dict={
@@ -229,8 +258,6 @@ class Agent:
         :return: the sampled action
         """
 
-        # print("policy values: " + str(self._value[(x * self._sensor.height) + y]))
-
         return self._policy[(x * self._sensor.height) + y]
 
     def rewards(self, task):
@@ -242,11 +269,11 @@ class Agent:
         """
 
         rewards = self._session.run(self._reward_functions[task])
-        reward = np.empty((self._sensor.width, self._sensor.height), dtype=np.float32)
+        reward = np.empty((self._env.width, self._env.height), dtype=np.float32)
 
-        for x in range(self._sensor.width):
-            for y in range(self._sensor.height):
-                reward[x, y] = rewards[(x * self._sensor.height) + y]
+        for x in range(self._env.width):
+            for y in range(self._env.height):
+                reward[x, y] = rewards[(x * self._env.height) + y]
 
         return reward
 
@@ -264,8 +291,7 @@ def builder(beta=1.0,
             rms_prop=False,
             use_baseline=False):
     """
-    Returns a builder which itself returns a context manager which
-    constructs an BAM agent with the given configuration
+    Returns a factory method for constructing BAM agents with the given configuration.
 
     :param beta: the temperature parameter for the soft value iteration
     :param gamma: the discount factor
@@ -282,42 +308,19 @@ def builder(beta=1.0,
     :return: a new builder for BAM agents
     """
 
-    def manager(sensor, data):
+    def build(env):
+        return Agent(env,
+                     beta=beta,
+                     gamma=gamma,
+                     planning_depth=planning_depth,
+                     obstacle_mean=obstacle_mean,
+                     obstacle_variance=obstacle_variance,
+                     penalty=penalty,
+                     learning_rate=learning_rate,
+                     batch_size=batch_size,
+                     pretrain_batches=pretrain_batches,
+                     online_batches=online_batches,
+                     rms_prop=rms_prop,
+                     use_baseline=use_baseline)
 
-        class Manager:
-            def __enter__(self):
-                self._graph = tf.Graph()
-
-                gpu_options = tf.GPUOptions(allow_growth=True)
-                config = tf.ConfigProto(gpu_options=gpu_options)
-                self._session = tf.Session(graph=self._graph, config=config)
-
-                try:
-                    agent = Agent(sensor, data, self._graph, self._session,
-                                  beta=beta,
-                                  gamma=gamma,
-                                  planning_depth=planning_depth,
-                                  obstacle_mean=obstacle_mean,
-                                  obstacle_variance=obstacle_variance,
-                                  penalty=penalty,
-                                  learning_rate=learning_rate,
-                                  batch_size=batch_size,
-                                  pretrain_batches=pretrain_batches,
-                                  online_batches=online_batches,
-                                  rms_prop=rms_prop,
-                                  use_baseline=use_baseline)
-                except Exception as e:
-                    self._session.close()
-                    raise e
-
-                return agent
-
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                self._session.close()
-                self._graph = None
-
-                return False
-
-        return Manager()
-
-    return manager
+    return build

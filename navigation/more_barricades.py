@@ -47,6 +47,6 @@ def more_barricades():
     env.reset(task="right")
 
     # Initialize sensor model
-    sensor = RoundSensor(env, 2)
+    sensor = RoundSensor(env, 4)
 
     return env, sensor

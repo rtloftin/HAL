@@ -148,3 +148,59 @@ class RoundSensor:
     @property
     def height(self):
         return self._env.height
+
+
+class PointSensor:
+    """
+    A sensor which can detect any obstacle within a circular region around the agent.
+    """
+
+    def __init__(self, env, map=None):
+        """
+        Initializes the sensor.
+
+        :param env: the navigation environment this sensor operates in
+        :param map: optional initial values for the occupancy map
+        """
+
+        self._env = env
+
+        if map is None:
+            self._map = np.full(env.occupied.shape, Occupancy.UNKNOWN)
+        else:
+            self._map = np.copy(map)
+
+    def update(self):
+        """
+        Updates a sensor map based on the agent's current position
+        """
+
+        x = self._env.x
+        y = self._env.y
+
+        if self._env.occupied[x, y]:
+            self._map[x, y] = Occupancy.OCCUPIED
+        else:
+            self._map[x, y] = Occupancy.CLEAR
+
+    def clone(self):
+        """
+        Creates a new sensor with the same map as this sensor, but
+        which is not updated when this sensor is updated.
+
+        :return: a copy of this sensor
+        """
+
+        return PointSensor(self._env, map=self._map)
+
+    @property
+    def map(self):
+        return self._map
+
+    @property
+    def width(self):
+        return self._env.width
+
+    @property
+    def height(self):
+        return self._env.height

@@ -67,6 +67,12 @@ def experiment(algorithms, env, sensor,
         costs[name] = []
         successes[name] = []
 
+    # Initialize agents
+    agents = dict()
+
+    for name, algorithm in algorithms.items():
+        agents[name] = algorithm(env)
+
     # Run experiments
     for sess in range(sessions):
         print("session " + str(sess))
@@ -93,12 +99,13 @@ def experiment(algorithms, env, sensor,
 
                 session_data.step(env.x, env.y, expert.act(env.x, env.y))
 
-        # Evaluate algorithms
-        for name, algorithm in algorithms.items():
+        # Evaluate agents
+        for name, agent in agents.items():
+
             print("algorithm - " + name)
             agent_sensor = session_sensor.clone()
 
-            with algorithm(agent_sensor, session_data) as agent:
+            with agent.session(agent_sensor, session_data):
                 cost, success = session(agent, env, agent_sensor,
                                         episodes=episodes,
                                         evaluations=evaluations,
